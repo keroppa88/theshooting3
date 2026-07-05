@@ -53,7 +53,6 @@
 
   <script type="module">
     import * as THREE from "three";
-    import { mergeGeometries } from "./vendor/three/BufferGeometryUtils.js";
 
     // ===== 画面/フィールド寸法（元の2Dゲームロジックの座標系をそのまま踏襲） =====
     const FIELD_W = 480;
@@ -127,121 +126,6 @@
         bgmPlaying = true;
       }
     }
-
-    // ===== 自機ドットマップ =====
-    // 0: 透明
-    // 1: 明るい緑, 2: 濃い緑, 3: 赤, 4: 水色, 5: 濃いグレー, 6: 暗いオレンジ
-    const playerMap = [
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,4,4,4,6,4,4,4,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0,0,0,0],
-      [0,1,1,1,1,1,1,1,1,1,1,4,1,1,1,1,1,1,1,1,1,1,0],
-      [0,1,1,1,3,1,1,1,1,1,1,4,1,1,1,1,1,1,3,1,1,1,0],
-      [0,0,1,1,1,1,1,1,1,1,1,4,1,1,1,1,1,1,1,1,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,1,1,1,1,2,1,1,1,1,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,1,1,1,1,2,1,1,1,1,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    ];
-    const PLAYER_COLORS = {1:"#1fd13b",2:"#0a7f1f",3:"#ff3333",4:"#8fd8ff",5:"#555555",6:"#c07020"};
-
-    // ===== 中ボス（飛行機）ドットマップ =====
-    // 0: 空白, 1: 暗い水色, 2: 水色, 3: 紺色, 4: グレー, 5: 濃いグレー, 6: 赤, 7: オレンジ
-    const midBossMap = [
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 3, 1, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 3, 1, 1, 1, 2, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 3, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 4, 0, 4, 0, 4, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 4, 0, 4, 0, 4, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 6, 0, 6, 0, 6, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 6, 0, 6, 0, 6, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 4, 0, 4, 0, 4, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 4, 0, 4, 0, 4, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 0, 0, 0],
-      [0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0],
-      [0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0],
-      [0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0],
-      [0, 0, 7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7, 0, 0],
-      [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
-      [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 4, 0, 4, 0, 4, 0, 0, 0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 4, 0, 4, 0, 4, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 6, 0, 6, 0, 6, 0, 0, 0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 6, 0, 6, 0, 6, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 6, 0, 6, 0, 6, 0, 0, 0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 6, 0, 6, 0, 6, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 2, 1, 0, 0, 0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 1, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 3, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    ];
-    const MIDBOSS_COLORS = {1:"#3a9ad9",2:"#73c7ff",3:"#0c2f73",4:"#9c9c9c",5:"#555555",6:"#d43131",7:"#ff8c2a"};
-
-    // ===== ミサイルのドットマップ =====
-    // 0: 空白, 1: 白, 2: 赤
-    const missileMap = [
-      [0,0,0,0,0,0,0,0,0],
-      [0,0,0,1,1,1,0,0,0],
-      [0,0,0,0,1,0,0,0,0],
-      [0,0,0,0,1,0,0,0,0],
-      [0,0,0,0,1,0,0,0,0],
-      [0,0,0,1,2,1,0,0,0],
-      [0,0,0,0,2,0,0,0,0],
-      [0,0,0,0,2,0,0,0,0],
-      [0,0,0,0,1,0,0,0,0],
-      [0,0,0,0,1,0,0,0,0],
-      [0,0,0,0,2,0,0,0,0],
-      [0,0,0,0,2,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0]
-    ];
-    const MISSILE_COLORS = {1:"#ffffff",2:"#ff3333"};
-
-    // ===== 頑丈な敵（横2体分） =====
-    const hardTwinMap = [
-      [0,0,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1]
-    ];
-    const HARDTWIN_COLORS = {1:"#9aa0a6"};
 
     // ===== 状態フラグ =====
     let gameStarted  = false;
@@ -1265,51 +1149,90 @@
     scene.background = new THREE.Color(0x02030a);
     scene.fog = new THREE.Fog(0x02030a, 700, 1500);
 
-    // 見下ろし視点を維持しつつ、斜め上からはっきり立体感の出る角度に傾けたカメラ
-    const CAM_TILT = THREE.MathUtils.degToRad(52);
-    const CAM_DIST = 900;
-    const camera = new THREE.OrthographicCamera();
+    // スターフォックス的な、自機の斜め後ろ上空からの追従（チェイス）カメラ。
+    // 自機は画面内（手前の固定デプス面）だけを左右上下に移動し、敵や弾は奥から手前へ
+    // 直進してくる——という座標系にするため、カメラは普通のPerspectiveCameraにする。
+    // カメラ自体は今は動かさないが、real 3Dの座標系なので後から角度を変えるのは容易。
+    const BASE_ALT      = 55;   // 自機・敵が飛ぶ標準高度
+    const ALT_SCALE      = 0.14;  // 自機の上下移動量 -> 高度変化のスケール（画面内に収まる控えめな量）
+    const DEFAULT_PLAYER_Y = FIELD_H - 80; // startGame()の初期y（=標準高度になる基準点）
+    const PLAYER_Z       = -200;  // 自機が張り付く固定デプス面
+    const PLAYER_X_VISUAL_SCALE = 0.42; // 自機のx移動量(0〜450)がこのデプスの画角に収まるようにする表示専用スケール
+    const DEPTH_SCALE     = 4.2;  // 敵/弾のy(奥行き進行)を実際の奥行きに変換する係数
+
+    const camera = new THREE.PerspectiveCamera(55, FIELD_W / FIELD_H, 1, 6000);
     function layoutCamera() {
-      const viewH = FIELD_H * Math.cos(CAM_TILT) * 1.15;
-      const viewW = viewH * (FIELD_W / FIELD_H);
-      camera.left = -viewW / 2;
-      camera.right = viewW / 2;
-      camera.top = viewH / 2;
-      camera.bottom = -viewH / 2;
-      camera.near = 1;
-      camera.far = 3000;
+      camera.aspect = FIELD_W / FIELD_H;
       camera.updateProjectionMatrix();
     }
     layoutCamera();
-    camera.position.set(0, Math.cos(CAM_TILT) * CAM_DIST, Math.sin(CAM_TILT) * CAM_DIST);
+    camera.position.set(0, BASE_ALT + 110, PLAYER_Z + 260);
     camera.up.set(0, 1, 0);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, BASE_ALT - 20, PLAYER_Z - 700);
 
-    const hemiLight = new THREE.HemisphereLight(0x8fb0ff, 0x0a0a12, 0.6);
+    const hemiLight = new THREE.HemisphereLight(0x8fb0ff, 0x0a0a12, 0.45);
     scene.add(hemiLight);
 
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    sunLight.position.set(-250, 500, 350);
+    // 自機付近（近〜中距離のレーン）を中心に影を落とす
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.9);
+    sunLight.position.set(-250, 600, PLAYER_Z + 450);
+    sunLight.target.position.set(0, BASE_ALT, PLAYER_Z - 500);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(1024, 1024);
-    sunLight.shadow.camera.left = -300;
-    sunLight.shadow.camera.right = 300;
-    sunLight.shadow.camera.top = 400;
-    sunLight.shadow.camera.bottom = -400;
+    sunLight.shadow.camera.left = -500;
+    sunLight.shadow.camera.right = 500;
+    sunLight.shadow.camera.top = 900;
+    sunLight.shadow.camera.bottom = -900;
     sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 1500;
+    sunLight.shadow.camera.far = 2200;
+    sunLight.shadow.bias = -0.0015;
     scene.add(sunLight);
+    scene.add(sunLight.target);
 
-    // 座標変換：2Dゲーム座標(x, y) -> 3Dワールド座標(X, Z)
+    // 反対側からの弱いフィルライト（側面が真っ黒に潰れないように）
+    const fillLight = new THREE.DirectionalLight(0x6699ff, 0.35);
+    fillLight.position.set(300, 200, PLAYER_Z + 200);
+    fillLight.target.position.set(0, BASE_ALT, PLAYER_Z - 500);
+    scene.add(fillLight);
+    scene.add(fillLight.target);
+
+    // 座標変換：2Dゲーム座標(x, y) -> 3Dワールド座標
+    // x（左右）は自機・敵・弾に共通のレーン位置としてそのまま使う。
+    // y は本来「奥から手前への進行度」なので、敵/弾/演出はtoDepthZで奥行きに変換する。
+    // 自機だけは「画面内を移動するだけ」で奥行きは固定（PLAYER_Z）にする。
     function toWorldX(x) { return x - FIELD_W / 2; }
-    function toWorldZ(y) { return y - FIELD_H / 2; }
+    function toDepthZ(y) { return (y - FIELD_H) * DEPTH_SCALE; }
 
-    // ===== 地面 =====
-    const groundGeo = new THREE.PlaneGeometry(FIELD_W * 2.4, FIELD_H * 2.4, 1, 1);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x05060d, roughness: 1, metalness: 0 });
+    // ===== 地面（トロン風グリッドで奥行きの手がかりを出す） =====
+    function buildGridTexture() {
+      const size = 512;
+      const cvs = document.createElement("canvas");
+      cvs.width = size; cvs.height = size;
+      const c = cvs.getContext("2d");
+      c.fillStyle = "#080b16";
+      c.fillRect(0, 0, size, size);
+      const cell = size / 16;
+      c.strokeStyle = "rgba(90,140,220,0.55)";
+      c.lineWidth = 2;
+      for (let i = 0; i <= 16; i++) {
+        c.beginPath(); c.moveTo(i * cell, 0); c.lineTo(i * cell, size); c.stroke();
+        c.beginPath(); c.moveTo(0, i * cell); c.lineTo(size, i * cell); c.stroke();
+      }
+      const tex = new THREE.CanvasTexture(cvs);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(14, 28);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+    const GROUND_W = 2600;
+    const GROUND_D = 5200;
+    const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
+    const groundMat = new THREE.MeshStandardMaterial({ map: buildGridTexture(), color: 0x9fb4dd, roughness: 1, metalness: 0 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
+    // 「奥行き」はほぼ全て負のZ側で起きるので、地面もその範囲を覆うように奥へずらす
+    ground.position.set(0, 0, -GROUND_D / 2 + 400);
     ground.receiveShadow = true;
     scene.add(ground);
 
@@ -1317,11 +1240,13 @@
     const starGeo = new THREE.BufferGeometry();
     const starPositions = new Float32Array(stars.length * 3);
     function syncStarGeometry() {
+      // 背景の星は遠くの空にある装飾なので、レーンの奥行きとは別に
+      // 広く・遠くへ引き伸ばして配置する（スカイボックス的な扱い）
       for (let i = 0; i < stars.length; i++) {
         const s = stars[i];
-        starPositions[i*3]   = toWorldX(s.x);
-        starPositions[i*3+1] = 40 + s.size * 6;
-        starPositions[i*3+2] = toWorldZ(s.y);
+        starPositions[i*3]   = toWorldX(s.x) * 2.4;
+        starPositions[i*3+1] = 120 + s.size * 90;
+        starPositions[i*3+2] = -600 - (s.y / FIELD_H) * 3600;
       }
       starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
       starGeo.attributes.position.needsUpdate = true;
@@ -1422,7 +1347,7 @@
           continue;
         }
         if (bg.mesh) {
-          bg.mesh.position.set(0, 0.5, bg.y);
+          bg.mesh.position.set(0, 0.5, toDepthZ(bg.y));
           if (bg.textures) {
             const idx = Math.floor(frameCount / bg.frameInterval) % bg.textures.length;
             if (bg.mesh.material.map !== bg.textures[idx]) {
@@ -1432,68 +1357,6 @@
           }
         }
       }
-    }
-
-    // ===== ボクセル風ジオメトリ生成 =====
-    function buildVoxelGeometry(map, colorMap, w, h, height) {
-      const rows = map.length;
-      const cols = map[0].length;
-      const cellW = w / cols;
-      const cellD = h / rows;
-      const unitBox = new THREE.BoxGeometry(1, 1, 1);
-      const parts = [];
-
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          const v = map[y][x];
-          const colorHex = colorMap[v];
-          if (!colorHex) continue;
-
-          const g = unitBox.clone();
-          g.scale(cellW * 1.02, height, cellD * 1.02);
-          g.translate(
-            (x - cols / 2 + 0.5) * cellW,
-            height / 2,
-            (y - rows / 2 + 0.5) * cellD
-          );
-
-          const color = new THREE.Color(colorHex);
-          const count = g.attributes.position.count;
-          const colors = new Float32Array(count * 3);
-          for (let i = 0; i < count; i++) {
-            colors[i*3] = color.r; colors[i*3+1] = color.g; colors[i*3+2] = color.b;
-          }
-          g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-          parts.push(g);
-        }
-      }
-      unitBox.dispose();
-
-      if (parts.length === 0) {
-        return new THREE.BoxGeometry(w, height, h);
-      }
-      const merged = mergeGeometries(parts, false);
-      parts.forEach(g => g.dispose());
-      return merged;
-    }
-
-    function buildRectVoxelGeometry(rects, height) {
-      const parts = [];
-      for (const r of rects) {
-        const g = new THREE.BoxGeometry(r.w, height, r.h);
-        g.translate(r.x + r.w / 2, height / 2, r.y + r.h / 2);
-        const color = new THREE.Color(r.color);
-        const count = g.attributes.position.count;
-        const colors = new Float32Array(count * 3);
-        for (let i = 0; i < count; i++) {
-          colors[i*3] = color.r; colors[i*3+1] = color.g; colors[i*3+2] = color.b;
-        }
-        g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-        parts.push(g);
-      }
-      const merged = mergeGeometries(parts, false);
-      parts.forEach(g => g.dispose());
-      return merged;
     }
 
     function buildStarShapeGeometry(points, outerR, innerR, thickness) {
@@ -1514,39 +1377,55 @@
     }
 
     // ---- 各スプライトの共有ジオメトリ／マテリアル ----
-    const playerGeo = buildVoxelGeometry(playerMap, PLAYER_COLORS, player.w, player.h, 10);
-    const playerMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.1 });
+    // 今は全部「仮の立方体」プレースホルダー。後でちゃんとした3Dモデル（MagicaVoxel等）に差し替え予定。
+    const playerGeo = new THREE.BoxGeometry(player.w, 22, player.h);
+    const playerMat = new THREE.MeshStandardMaterial({ color: 0x2266ff, roughness: 0.5, metalness: 0.15 });
     const playerMesh = new THREE.Mesh(playerGeo, playerMat);
     playerMesh.castShadow = true;
     playerMesh.receiveShadow = false;
     scene.add(playerMesh);
 
-    const midBossGeo = buildVoxelGeometry(midBossMap, MIDBOSS_COLORS, 270, 270, 22);
-    const midBossMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.15 });
+    // 中ボス：単純な箱よりは少し機体らしいシルエットになるよう、胴体＋主翼＋尾翼の3ブロック構成にする
+    const midBossMat = new THREE.MeshStandardMaterial({ color: 0x3a9ad9, roughness: 0.5, metalness: 0.15 });
+    const midBossFinMat = new THREE.MeshStandardMaterial({ color: 0xd43131, roughness: 0.5, metalness: 0.15 });
+    function buildMidBossTemplate() {
+      const group = new THREE.Group();
 
-    const missileGeo = buildVoxelGeometry(missileMap, MISSILE_COLORS, 12, 48, 8);
-    const missileMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.2 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(70, 50, 260), midBossMat);
+      body.position.set(0, 25, 0);
+      group.add(body);
 
-    const hardTwinGeo = buildVoxelGeometry(hardTwinMap, HARDTWIN_COLORS, 120, 60, 16);
-    const hardTwinMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.2, emissive: 0x000000 });
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(270, 20, 90), midBossMat);
+      wing.position.set(0, 18, -10);
+      group.add(wing);
 
-    // シンプル戦闘機（通常敵・軌跡敵・ジグザグ敵で共有、色だけ差し替え）
-    const enemyShipGeo = buildRectVoxelGeometry([
-      { x: -4,  y: -12, w: 8,  h: 24, color: "#ff3333" },
-      { x: -14, y: -3,  w: 28, h: 6,  color: "#ff3333" },
-      { x: -5,  y: 7,   w: 10, h: 4,  color: "#ff3333" }
-    ], 9);
-    enemyShipGeo.addGroup(0, enemyShipGeo.index.count, 0);
-    const canopyGeo = buildRectVoxelGeometry([{ x: -3, y: -9, w: 6, h: 5, color: "#ffaaaa" }], 10);
+      const tailFin = new THREE.Mesh(new THREE.BoxGeometry(16, 40, 40), midBossFinMat);
+      tailFin.position.set(0, 45, 110);
+      group.add(tailFin);
+
+      group.traverse(o => { if (o.isMesh) o.castShadow = true; });
+      return group;
+    }
+    const midBossTemplate = buildMidBossTemplate();
+
+    const missileGeo = new THREE.BoxGeometry(12, 18, 48);
+    const missileMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, emissive: 0x552222, roughness: 0.4 });
+
+    const hardTwinGeo = new THREE.BoxGeometry(120, 34, 60);
+    const hardTwinMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.6, metalness: 0.2, emissive: 0x000000 });
+
+    // 通常敵・軌跡敵・ジグザグ敵で共有する簡易立方体（全部赤で統一）
+    const enemyShipGeo = new THREE.BoxGeometry(30, 20, 30);
+    const enemyShipMat = new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.5, metalness: 0.15 });
 
     // 自機弾・敵弾
-    const playerBulletGeo = new THREE.BoxGeometry(6, 10, 12);
+    const playerBulletGeo = new THREE.BoxGeometry(6, 16, 12);
     const playerBulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x554400, roughness: 0.3 });
-    const enemyBulletGeo = new THREE.BoxGeometry(4, 8, 10);
+    const enemyBulletGeo = new THREE.BoxGeometry(4, 14, 10);
     const enemyBulletMat = new THREE.MeshStandardMaterial({ color: 0xff5555, emissive: 0x550000, roughness: 0.3 });
 
     // パワーアップ★（3方向ショット／2連ショット）
-    const powerStarGeo = buildStarShapeGeometry(5, 10, 4, 6);
+    const powerStarGeo = buildStarShapeGeometry(5, 10, 4, 10);
     const powerStarMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x666622, roughness: 0.3, metalness: 0.4 });
     const doubleStarMat = new THREE.MeshStandardMaterial({ color: 0xbbeaff, emissive: 0x224466, roughness: 0.3, metalness: 0.4 });
 
@@ -1567,21 +1446,14 @@
         mesh = new THREE.Mesh(hardTwinGeo, mat);
         mesh.castShadow = true;
       } else if (entity.isBoss) {
-        mesh = new THREE.Mesh(midBossGeo, midBossMat);
-        mesh.castShadow = true;
+        mesh = midBossTemplate.clone();
       } else if (entity.isMissile) {
         mesh = new THREE.Mesh(missileGeo, missileMat);
         mesh.castShadow = true;
       } else if (entity.w === player.w && entity.h === player.h && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
-        // 通常敵／軌跡敵／ジグザグ敵（簡易戦闘機ボクセル）
-        const group = new THREE.Group();
-        const hullColor = entity.color || (entity.isShooter ? "#ff66aa" : "#ff3333");
-        const hullMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.15, color: new THREE.Color(hullColor) });
-        const hull = new THREE.Mesh(enemyShipGeo, hullMat);
-        const canopy = new THREE.Mesh(canopyGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.1 }));
-        hull.castShadow = true; canopy.castShadow = true;
-        group.add(hull); group.add(canopy);
-        mesh = group;
+        // 通常敵／軌跡敵／ジグザグ敵（仮の赤い立方体）
+        mesh = new THREE.Mesh(enemyShipGeo, enemyShipMat);
+        mesh.castShadow = true;
       } else if (entity.hasOwnProperty("vx") && entity.h > entity.w) {
         // 弾（自機弾／敵弾は幅より高さが大きい細長い矩形）
         const isPlayerBullet = entity.vy < 0 || (entity.vy === 0 && entity.vx !== 0 && entity.w === 6);
@@ -1592,7 +1464,7 @@
         mesh = new THREE.Mesh(powerStarGeo, isDouble ? doubleStarMat : powerStarMat);
         mesh.castShadow = true;
       } else {
-        mesh = new THREE.Mesh(enemyShipGeo, new THREE.MeshStandardMaterial({ vertexColors: true }));
+        mesh = new THREE.Mesh(enemyShipGeo, enemyShipMat);
       }
       scene.add(mesh);
       entity.mesh3d = mesh;
@@ -1611,24 +1483,24 @@
     }
 
     function heightFor(entity) {
-      if (entity.isFinalBoss) return 6;
-      if (entity.type === "hard_twin") return 8;
-      if (entity.isBoss) return 12;
-      if (entity.isMissile) return 6;
-      if (entity.hasOwnProperty("vx")) return 5;
-      if (entity.hasOwnProperty("size")) return 3;
-      return 5;
+      if (entity.isFinalBoss) return BASE_ALT + 10;
+      if (entity.type === "hard_twin") return BASE_ALT + 14;
+      if (entity.isBoss) return BASE_ALT + 20;
+      if (entity.isMissile) return BASE_ALT + 10;
+      if (entity.hasOwnProperty("vx")) return BASE_ALT + 9;
+      if (entity.hasOwnProperty("size")) return BASE_ALT + 5;
+      return BASE_ALT;
     }
 
     function syncBoxEntities(list) {
       for (const e of list) {
         const mesh = getOrCreateMesh(e);
         if (e.isFinalBoss) {
-          mesh.scale.set(e.w, 34, e.h);
+          mesh.scale.set(e.w, 60, e.h);
         }
         const cx = e.x + e.w / 2;
         const cy = e.y + e.h / 2;
-        mesh.position.set(toWorldX(cx), heightFor(e), toWorldZ(cy));
+        mesh.position.set(toWorldX(cx), heightFor(e), toDepthZ(cy));
 
         if (e.type === "zigzag_enemy") {
           mesh.rotation.y = Math.max(-0.5, Math.min(0.5, -Math.sin(e.zigPhase) * 0.6));
@@ -1670,7 +1542,7 @@
           const p = e.trail[i];
           positions[i*3]   = toWorldX(p.x);
           positions[i*3+1] = 3;
-          positions[i*3+2] = toWorldZ(p.y);
+          positions[i*3+2] = toDepthZ(p.y);
           const a = Math.max(0, Math.min(1, p.life / 240));
           colors[i*3]   = base.r * a;
           colors[i*3+1] = base.g * a;
@@ -1732,7 +1604,7 @@
         const alphaBase = 1 - t;
 
         const group = ensureExplosionMesh(ex);
-        group.position.set(toWorldX(ex.x), 6, toWorldZ(ex.y));
+        group.position.set(toWorldX(ex.x), BASE_ALT + 6, toDepthZ(ex.y));
 
         for (const { mesh, ring } of group.userData.rings) {
           const radius = Math.max(0.001, ex.maxRadius * ring.r * ease);
@@ -1777,7 +1649,7 @@
       group.add(core);
       group.userData.core = core;
 
-      group.position.set(toWorldX(finalBigExplosion.x), 0, toWorldZ(finalBigExplosion.y));
+      group.position.set(toWorldX(finalBigExplosion.x), BASE_ALT, toDepthZ(finalBigExplosion.y));
       scene.add(group);
       finalBigExplosionGroup = group;
       return group;
@@ -1820,16 +1692,18 @@
     }
 
     // ===== プレイヤー機の見た目（バンク角） =====
-    function syncPlayerMesh() {
-      playerMesh.position.set(toWorldX(player.x + player.w/2), 6, toWorldZ(player.y + player.h/2));
+    // 自機は奥行き（Z）は固定のまま、画面内（X/Y）だけを動く「スターフォックス」方式。
+    // 元のyは「上に行くほど高く」なるよう高度に変換する。
+    function playerAltitude(y) {
+      return BASE_ALT + (DEFAULT_PLAYER_Y - y) * ALT_SCALE;
     }
 
-    let prevPlayerX = player.x;
-    function syncPlayerBanking() {
-      const dx = player.x - prevPlayerX;
-      prevPlayerX = player.x;
-      const targetTilt = Math.max(-0.5, Math.min(0.5, -dx * 0.12));
-      playerMesh.rotation.z += (targetTilt - playerMesh.rotation.z) * 0.2;
+    function syncPlayerMesh() {
+      playerMesh.position.set(
+        toWorldX(player.x + player.w / 2) * PLAYER_X_VISUAL_SCALE,
+        playerAltitude(player.y + player.h / 2),
+        PLAYER_Z
+      );
     }
 
     function syncStarfieldMotion() {
@@ -1846,7 +1720,6 @@
       syncExplosions();
       syncFinalBigExplosion();
       syncPlayerMesh();
-      syncPlayerBanking();
       syncStarfieldMotion();
 
       ground.visible = (clearPhase === 0);
