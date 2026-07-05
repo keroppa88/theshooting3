@@ -2,40 +2,74 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>The ShootingⅡ</title>
+  <title>The ShootingⅡ (3D)</title>
   <style>
-    body {
+    html, body {
       margin: 0;
       background: #000;
+      height: 100%;
+    }
+    body {
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
       color: #fff;
       font-family: sans-serif;
     }
-    canvas {
-      background: #111;
+    #stage {
+      position: relative;
+      width: 480px;
+      height: 640px;
+      background: #000;
       border: 2px solid #555;
+      outline: none;
+    }
+    #stage canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 480px;
+      height: 640px;
+      display: block;
+    }
+    #hud {
+      pointer-events: auto;
     }
   </style>
 </head>
 <body>
-  <canvas id="game" width="480" height="640"></canvas>
+  <div id="stage" tabindex="0">
+    <canvas id="webgl" width="480" height="640"></canvas>
+    <canvas id="hud"   width="480" height="640"></canvas>
+  </div>
 
-  <script>
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { mergeGeometries } from "./vendor/three/BufferGeometryUtils.js";
+
+    // ===== 画面/フィールド寸法（元の2Dゲームロジックの座標系をそのまま踏襲） =====
+    const FIELD_W = 480;
+    const FIELD_H = 640;
+
+    const stage = document.getElementById("stage");
+    const hud = document.getElementById("hud");
+    const hctx = hud.getContext("2d");
 
     // クリック/タップでも開始できるようにする（フォーカス問題対策）
-    canvas.tabIndex = 0;
-    canvas.style.outline = "none";
-    canvas.focus();
-    canvas.addEventListener("pointerdown", () => {
+    stage.tabIndex = 0;
+    stage.addEventListener("pointerdown", () => {
       unlockBgm();
       if (!gameStarted && clearPhase === 0 && !gameCleared) startGame();
     });
-
+    stage.focus();
 
     // ===== 効果音 =====
     const shootSound         = new Audio("Game/shoot.mp3");
@@ -94,88 +128,30 @@
       }
     }
 
-    // ===== スクロール背景画像 =====
-
-    const backgroundScrollSpeed = 0.9;
-
-    function createBackgroundScroll(src, triggerScore) {
-      const image = new Image();
-      const state = {
-        image,
-        loaded: false,
-        triggered: false,
-        pending: false,
-        active: false,
-        y: -canvas.height,
-        triggerScore,
-      };
-
-      image.onload = () => {
-        state.loaded = true;
-        if (state.pending) {
-          startBackgroundScroll(state);
-        }
-      };
-
-      image.src = src;
-      return state;
-    }
-
-const backgroundScrolls = [
-  createBackgroundScroll("Game/back1.png", 1650),
-
-      // back2だけ2コマ特例（createBackgroundScrollを使わない）
-      (() => {
-        const bg = {
-          frames: [new Image(), new Image()],
-          loadedCount: 0,
-          loaded: false,
-          triggered: false,
-          pending: false,
-          active: false,
-          y: -canvas.height,
-          triggerScore: 1000,
-          frameInterval: 12,
-        };
-
-        const onload = () => {
-          bg.loadedCount++;
-          if (bg.loadedCount >= 2) {
-            bg.loaded = true;
-            if (bg.pending) startBackgroundScroll(bg);
-          }
-        };
-
-        // ★先にonloadを付ける（ここが重要）
-        bg.frames[0].onload = onload;
-        bg.frames[1].onload = onload;
-
-        bg.frames[0].src = "Game/back2_0.png";
-        bg.frames[1].src = "Game/back2_1.png";
-
-        return bg;
-      })(),
+    // ===== 自機ドットマップ =====
+    // 0: 透明
+    // 1: 明るい緑, 2: 濃い緑, 3: 赤, 4: 水色, 5: 濃いグレー, 6: 暗いオレンジ
+    const playerMap = [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,4,4,4,6,4,4,4,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0,0,0,0],
+      [0,1,1,1,1,1,1,1,1,1,1,4,1,1,1,1,1,1,1,1,1,1,0],
+      [0,1,1,1,3,1,1,1,1,1,1,4,1,1,1,1,1,1,3,1,1,1,0],
+      [0,0,1,1,1,1,1,1,1,1,1,4,1,1,1,1,1,1,1,1,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,1,1,1,1,2,1,1,1,1,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,1,1,1,1,2,1,1,1,1,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ];
-    // ===== エンディング画像 =====
-    const endingImage = new Image();
-    endingImage.src = "Game/last.jpg";
-    let endingImageLoaded = false;
-    endingImage.onload = () => { endingImageLoaded = true; };
-
-
- // ===== 最終ボス画像 =====
-    const finalBossImage = new Image();
-    finalBossImage.src = "Game/boss.png";
-    let finalBossImageLoaded = false;
-    finalBossImage.onload = () => {
-      finalBossImageLoaded = true;
-
-      // 画像ロード後に既存の最終ボスがいれば、実寸に合わせて衝突サイズを更新する
-      const existingFinalBoss = enemies.find(e => e.isFinalBoss);
-      if (existingFinalBoss) {
-        resizeFinalBossEntity(existingFinalBoss);
-      }
-    };
+    const PLAYER_COLORS = {1:"#1fd13b",2:"#0a7f1f",3:"#ff3333",4:"#8fd8ff",5:"#555555",6:"#c07020"};
 
     // ===== 中ボス（飛行機）ドットマップ =====
     // 0: 空白, 1: 暗い水色, 2: 水色, 3: 紺色, 4: グレー, 5: 濃いグレー, 6: 赤, 7: オレンジ
@@ -199,8 +175,7 @@ const backgroundScrolls = [
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -232,30 +207,7 @@ const backgroundScrolls = [
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ];
-
-    // ===== 自機ドットマップ =====
-    // 0: 透明
-    // 1: 明るい緑, 2: 濃い緑, 3: 赤, 4: 水色, 5: 濃いグレー, 6: 暗いオレンジ
-    const playerMap = [
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,4,4,4,6,4,4,4,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,5,5,5,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0,0,0,0],
-      [0,1,1,1,1,1,1,1,1,1,1,4,1,1,1,1,1,1,1,1,1,1,0],
-      [0,1,1,1,3,1,1,1,1,1,1,4,1,1,1,1,1,1,3,1,1,1,0],
-      [0,0,1,1,1,1,1,1,1,1,1,4,1,1,1,1,1,1,1,1,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,4,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,1,1,1,1,2,1,1,1,1,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,1,1,1,1,2,1,1,1,1,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    ];
+    const MIDBOSS_COLORS = {1:"#3a9ad9",2:"#73c7ff",3:"#0c2f73",4:"#9c9c9c",5:"#555555",6:"#d43131",7:"#ff8c2a"};
 
     // ===== ミサイルのドットマップ =====
     // 0: 空白, 1: 白, 2: 赤
@@ -274,6 +226,22 @@ const backgroundScrolls = [
       [0,0,0,0,2,0,0,0,0],
       [0,0,0,0,0,0,0,0,0]
     ];
+    const MISSILE_COLORS = {1:"#ffffff",2:"#ff3333"};
+
+    // ===== 頑丈な敵（横2体分） =====
+    const hardTwinMap = [
+      [0,0,0,0,0,0,0,0],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1]
+    ];
+    const HARDTWIN_COLORS = {1:"#9aa0a6"};
 
     // ===== 状態フラグ =====
     let gameStarted  = false;
@@ -282,32 +250,13 @@ const backgroundScrolls = [
 
     let clearPhase = 0;
     let clearFrame = 0;
-    let clearExplosionX = canvas.width / 2;
-    let clearExplosionY = canvas.height / 2;
+    let clearExplosionX = FIELD_W / 2;
+    let clearExplosionY = FIELD_H / 2;
 
-    // 直近のエラーを保持（デバッグ用途。未宣言のまま使われないよう初期化）
     let lastError = null;
 
-
-    // 大ボス専用・15重リング爆発
     let finalBigExplosion = null;
-    // 爆発終了後の白フラッシュ
-    let clearFlashTimer = 0; // >0 の間、白く点滅
-
-    function startBackgroundScroll(bg) {
-      bg.y = -canvas.height;
-      bg.active = true;
-      bg.pending = false;
-    }
-
-    function resetBackgroundScrolls() {
-      for (const bg of backgroundScrolls) {
-        bg.triggered = false;
-        bg.pending = false;
-        bg.active = false;
-        bg.y = -canvas.height;
-      }
-    }
+    let clearFlashTimer = 0;
 
     const missileScorePoints = [500, 600, 700, 800, 900, 1000];
     const starScorePoints         = [1000,1300];
@@ -316,28 +265,23 @@ const backgroundScrolls = [
     const missileSpawned = {};
     const starSpawned    = {};
     const doubleShotStarSpawned = {};
-    
+
     // 入力
     const keys = {};
     document.addEventListener("keydown", e => {
       keys[e.code] = true;
-
-      // 最初の入力でBGM解除（後の敵撃破で再生できるように）
       unlockBgm();
 
-      // タイトル中：何かのボタンでスタート
       if (!gameStarted && clearPhase === 0 && !gameCleared) {
         startGame();
         return;
       }
 
-      // クリア後タイトルに戻る
       if (gameCleared &&
           (e.code === "Space" || e.code === "Enter" || e.code === "KeyR")) {
         backToTitle();
       }
 
-      // ゲームオーバーからの再開
       if (gameStarted && !gameCleared && gameOver && e.code === "KeyR") {
         startGame();
       }
@@ -364,10 +308,8 @@ const backgroundScrolls = [
         prevGamepadButtons = [];
         return false;
       }
-
       const nextButtons = gp.buttons.map(b => !!(b && b.pressed));
       const pressed = restartGamepadButtons.some(idx => nextButtons[idx] && !prevGamepadButtons[idx]);
-
       prevGamepadButtons = nextButtons;
       return pressed;
     }
@@ -393,8 +335,8 @@ const backgroundScrolls = [
 
     // ===== オブジェクト =====
     const player = {
-      x: canvas.width / 2 - 15,
-      y: canvas.height - 80,
+      x: FIELD_W / 2 - 15,
+      y: FIELD_H - 80,
       w: 30,
       h: 30,
       speed: 5,
@@ -407,17 +349,16 @@ const backgroundScrolls = [
     const explosions = [];
     const powerStars = [];
     const doubleShotStars = [];
-    
-    let powerUpActive = false; 
+
+    let powerUpActive = false;
     let powerUpTimer  = 0;
     let doubleShotActive = false;
 
     let enemySpawnTimer = 0;
 
-    // 追加敵のスポーン制御
-    let trailSpawnTimer = 0;   // 5〜10秒
-    let hardTwinSpawnTimer = 0; // score>500 で稼働
-    let zigzagSpawnTimer = 0;  // score>900 で稼働
+    let trailSpawnTimer = 0;
+    let hardTwinSpawnTimer = 0;
+    let zigzagSpawnTimer = 0;
 
     let score = 0;
     let nextBossScore = 300;
@@ -430,8 +371,8 @@ const backgroundScrolls = [
     const stars = [];
     for (let i = 0; i < 80; i++) {
       stars.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
+        x: Math.random() * FIELD_W,
+        y: Math.random() * FIELD_H,
         size: 1 + Math.random() * 2
       });
     }
@@ -447,7 +388,7 @@ const backgroundScrolls = [
     function spawnEnemy() {
       const w = 30;
       const h = 30;
-      const x = Math.random() * (canvas.width - w);
+      const x = Math.random() * (FIELD_W - w);
       const y = -h;
       const speed = 2 + Math.random() * 2;
 
@@ -465,7 +406,6 @@ const backgroundScrolls = [
         diagDir: (Math.random() < 0.5 ? -1 : 1),
         shotTimer: 0,
         shotsLeft: 0,
-        // trail (visual only)
         trail: [],
         trailColor: TRAIL_COLORS[(Math.random()*TRAIL_COLORS.length)|0]
       };
@@ -473,35 +413,27 @@ const backgroundScrolls = [
       if (canShoot) {
         fireEnemyBulletsFromEnemy(e);
         e.shotsLeft = 1;
-        e.shotTimer = 120; // 2秒後
+        e.shotTimer = 120;
       }
 
       enemies.push(e);
     }
 
-    // ===== 追加通常敵（色違い） =====
     const TRAIL_COLORS = [
-      "rgba(255,255,255,0.85)", // white
-      "rgba(255,0,0,0.85)",     // red
-      "rgba(255,105,180,0.85)", // pink
-      "rgba(120,200,255,0.85)", // light blue
-      "rgba(0,120,255,0.85)",   // blue
-      "rgba(0,255,200,0.85)",   // teal
-      "rgba(150,255,80,0.85)",  // yellow-green
-      "rgba(190,120,255,0.85)", // bright purple
-      "rgba(255,255,0,0.85)",   // yellow
-      "rgba(255,165,0,0.85)"    // orange
+      "#ffffff", "#ff0000", "#ff69b4",
+      "#78c8ff", "#0078ff", "#00ffc8",
+      "#96ff50", "#be78ff", "#ffff00",
+      "#ffa500"
     ];
 
     function randInt(min, max) {
       return (min + Math.random() * (max - min + 1)) | 0;
     }
 
-    // ①軌跡を描く敵（2秒に1回・直進弾）
     function spawnTrailEnemy() {
       const w = 30;
       const h = 30;
-      const x = Math.random() * (canvas.width - w);
+      const x = Math.random() * (FIELD_W - w);
       const y = -h;
 
       enemies.push({
@@ -519,11 +451,10 @@ const backgroundScrolls = [
       });
     }
 
-    // ②ジグザグ敵（3秒に1回・斜め±30度に2発）
     function spawnZigzagEnemy() {
       const w = 30;
       const h = 30;
-      const x = Math.random() * (canvas.width - w);
+      const x = Math.random() * (FIELD_W - w);
       const y = -h;
 
       enemies.push({
@@ -542,27 +473,10 @@ const backgroundScrolls = [
       });
     }
 
-    // ③横に2体ぶんの頑丈すぎる敵（HP=35、攻撃なし）
-    const hardTwinMap = [
-      [0,0,0,0,0,0,0,0],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1],
-      [1,1,1,1,1,1,1,1]
-    ];
-
     function spawnHardTwin() {
-      const cols = hardTwinMap[0].length;
-      const rows = hardTwinMap.length;
-
       const w = 120;
-      const h = 60; // 横長で固定
-      const x = Math.random() * (canvas.width - w);
+      const h = 60;
+      const x = Math.random() * (FIELD_W - w);
       const y = -h;
 
       enemies.push({
@@ -583,7 +497,7 @@ const backgroundScrolls = [
       const h = 48;
       const speed = 6 * 1.5;
       for (let i = 0; i < count; i++) {
-        const x = Math.random() * (canvas.width - w);
+        const x = Math.random() * (FIELD_W - w);
         const y = -h;
         enemies.push({
           x, y, w, h, speed,
@@ -597,22 +511,16 @@ const backgroundScrolls = [
 
     function spawnStar() {
       const size = 20;
-      const x = Math.random() * (canvas.width - size);
+      const x = Math.random() * (FIELD_W - size);
       const y = -size;
-      powerStars.push({
-        x, y, size,
-        speed: 2
-      });
+      powerStars.push({ x, y, size, w: size, h: size, speed: 2 });
     }
 
     function spawnDoubleShotStar() {
       const size = 20;
-      const x = Math.random() * (canvas.width - size);
+      const x = Math.random() * (FIELD_W - size);
       const y = -size;
-      doubleShotStars.push({
-        x, y, size,
-        speed: 2.2
-      });
+      doubleShotStars.push({ x, y, size, w: size, h: size, speed: 2.2 });
     }
 
     function createBossAt(x) {
@@ -636,42 +544,24 @@ const backgroundScrolls = [
     function spawnBoss() {
       const baseW = 30;
       const w = baseW * 9;
-      const x = (canvas.width - w) / 2;
+      const x = (FIELD_W - w) / 2;
       createBossAt(x);
     }
 
     function spawnBossPair() {
       const baseW = 30;
       const w = baseW * 9;
-      const leftX  = canvas.width * 0.25 - w / 2;
-      const rightX = canvas.width * 0.75 - w / 2;
+      const leftX  = FIELD_W * 0.25 - w / 2;
+      const rightX = FIELD_W * 0.75 - w / 2;
       createBossAt(leftX);
       createBossAt(rightX);
     }
-    function getFinalBossSize() {
-      const desiredH = canvas.height / 3;
-      const aspect = (finalBossImageLoaded && finalBossImage.naturalHeight > 0)
-        ? finalBossImage.naturalWidth / finalBossImage.naturalHeight
-        : 1;
-
-      return { w: desiredH * aspect, h: desiredH };
-    }
-
-    function resizeFinalBossEntity(boss) {
-      const { w, h } = getFinalBossSize();
-      const centerX = boss.x + boss.w / 2;
-
-      boss.w = w;
-      boss.h = h;
-      boss.x = Math.max(0, Math.min(canvas.width - w, centerX - w / 2));
-    }
 
     function spawnFinalBoss() {
-      const { w, h } = getFinalBossSize();
-
-
-      const x = (canvas.width - w) / 2;
-      const y = canvas.height * 0.05; // 画面上部に表示
+      const h = FIELD_H / 3;
+      const w = h; // MagicaVoxelモデル差し替え前提の仮の正方形プレースホルダー
+      const x = (FIELD_W - w) / 2;
+      const y = FIELD_H * 0.05;
       const speed = 2;
 
       enemies.push({
@@ -690,14 +580,10 @@ const backgroundScrolls = [
       if (finalMode) return;
 
       while (score >= nextBossScore) {
-
-    // ★ 1200点は中ボス出現なし
         if (nextBossScore === 1200) {
           nextBossScore += 300;
           continue;
         }
-
-
         if (nextBossScore === 1500) {
           spawnBossPair();
         } else {
@@ -710,7 +596,7 @@ const backgroundScrolls = [
     function tryStartFinalMode() {
       if (!finalMode && score > 1800) {
         finalMode = true;
-        finalDelayFrames = 60 * 10; // 10秒敵なし
+        finalDelayFrames = 60 * 10;
       }
     }
 
@@ -737,11 +623,9 @@ const backgroundScrolls = [
       }
     }
 
-    // ===== 大ボス専用 15重リング爆発（全面改訂版） =====
     function createFinalBigExplosion(x, y) {
-      // 最大半径：従来より 1.5 倍（画面の短い辺の約 0.6）
-      const maxRadius = Math.min(canvas.width, canvas.height) * 0.6;
-      const maxLife   = 120; // 約2秒
+      const maxRadius = Math.min(FIELD_W, FIELD_H) * 0.6;
+      const maxLife   = 120;
 
       const baseColors = [
         "#ffffff", "#ffe066", "#ff9933", "#ff5555", "#ff66ff",
@@ -753,19 +637,12 @@ const backgroundScrolls = [
       for (let i = 0; i < 15; i++) {
         rings.push({
           color: baseColors[i % baseColors.length],
-          delay: i * 0.03,        // 後ろのリングほど少し遅れて広がる
-          width: 3 + i * 0.3      // 外側ほど太く
+          delay: i * 0.03,
+          width: 3 + i * 0.3
         });
       }
 
-      finalBigExplosion = {
-        x,
-        y,
-        life: 0,
-        maxLife,
-        maxRadius,
-        rings
-      };
+      finalBigExplosion = { x, y, life: 0, maxLife, maxRadius, rings };
     }
 
     function updateFinalBigExplosion() {
@@ -773,82 +650,24 @@ const backgroundScrolls = [
       finalBigExplosion.life++;
     }
 
-    function drawFinalBigExplosion() {
-      if (!finalBigExplosion) return;
-      const fw = finalBigExplosion;
-      const baseT = fw.life / fw.maxLife; // 0 → 1
-
-      // 先行する「中心の塗りつぶし」円（花火の中身）
-      if (baseT > 0) {
-        const tLead = Math.min(1, baseT);
-        const easeLead = Math.sqrt(tLead);
-        const radiusLead = fw.maxRadius * easeLead;
-
-        let fillColor;
-        if (baseT < 0.5) {
-          // 前半：黄色
-          fillColor = "#ffe066";
-        } else if (baseT < 0.8) {
-          // 中盤：白
-          fillColor = "#ffffff";
-        } else {
-          // 終盤：白と赤白点滅
-          const blink = (fw.life % 6) < 3;
-          fillColor = blink ? "#ffffff" : "#ffcccc";
-        }
-
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.85;
-        ctx.fillStyle = fillColor;
-        ctx.beginPath();
-        ctx.arc(fw.x, fw.y, radiusLead, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // 15重のカラフルなリング
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-
-      for (let i = 0; i < fw.rings.length; i++) {
-        const ring = fw.rings[i];
-
-        const tRaw = (baseT - ring.delay) / (1 - ring.delay);
-        if (tRaw <= 0) continue;
-        if (tRaw >= 1.1) continue;
-
-        const t = Math.min(1, tRaw);
-        const ease = Math.sqrt(t);
-        const radius = fw.maxRadius * ease;
-
-        const alpha = (1 - baseT) * 0.9; // 全体として時間と共にフェードアウト
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = ring.color;
-        ctx.lineWidth = ring.width;
-
-        ctx.beginPath();
-        ctx.arc(fw.x, fw.y, radius, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    }
-
     function startClearSequence(cx, cy) {
       clearPhase = 1;
       clearFrame = 0;
+      for (const ex of explosions) removeMesh3D(ex);
+      for (const b of bullets) removeMesh3D(b);
+      for (const b of enemyBullets) removeMesh3D(b);
+      for (const e of enemies) removeMesh3D(e);
+      removeAllTrails();
       explosions.length = 0;
       bullets.length = 0;
       enemyBullets.length = 0;
       enemies.length = 0;
 
-      clearExplosionX = (cx !== undefined) ? cx : canvas.width / 2;
-      clearExplosionY = (cy !== undefined) ? cy : canvas.height / 2;
+      clearExplosionX = (cx !== undefined) ? cx : FIELD_W / 2;
+      clearExplosionY = (cy !== undefined) ? cy : FIELD_H / 2;
 
-      // 大ボス撃破地点で15重リング爆発
       createFinalBigExplosion(clearExplosionX, clearExplosionY);
-      clearFlashTimer = 0; // フラッシュ用タイマー初期化
+      clearFlashTimer = 0;
     }
 
     // ===== 自機弾 =====
@@ -894,7 +713,6 @@ const backgroundScrolls = [
 
       if (enemy.shotPattern === "double") {
         enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx: 0, vy: speed });
-
         const vx = Math.sin(angle) * speed * enemy.diagDir;
         const vy = Math.cos(angle) * speed;
         enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx, vy });
@@ -909,7 +727,6 @@ const backgroundScrolls = [
       const speed = 6*1.5;
       const angle = Math.PI / 6;
 
-        // 大ボス：中央下寄りから
       const cx = boss.x + boss.w * 0.5;
       const cy = boss.y + boss.h * 0.78;
 
@@ -944,8 +761,8 @@ const backgroundScrolls = [
         if (pad.dpadDown)  player.y += player.speed;
       }
 
-      player.x = Math.max(0, Math.min(canvas.width  - player.w, player.x));
-      player.y = Math.max(0, Math.min(canvas.height - player.h, player.y));
+      player.x = Math.max(0, Math.min(FIELD_W  - player.w, player.x));
+      player.y = Math.max(0, Math.min(FIELD_H - player.h, player.y));
 
       if (player.fireCooldown > 0) player.fireCooldown--;
 
@@ -971,8 +788,9 @@ const backgroundScrolls = [
         const b = bullets[i];
         b.x += b.vx;
         b.y += b.vy;
-        if (b.y + b.h < 0 || b.y > canvas.height ||
-            b.x + b.w < 0 || b.x > canvas.width) {
+        if (b.y + b.h < 0 || b.y > FIELD_H ||
+            b.x + b.w < 0 || b.x > FIELD_W) {
+          removeMesh3D(b);
           bullets.splice(i, 1);
         }
       }
@@ -984,7 +802,8 @@ const backgroundScrolls = [
         b.x += b.vx;
         b.y += b.vy;
 
-        if (b.y > canvas.height || b.x + b.w < 0 || b.x > canvas.width) {
+        if (b.y > FIELD_H || b.x + b.w < 0 || b.x > FIELD_W) {
+          removeMesh3D(b);
           enemyBullets.splice(i, 1);
           continue;
         }
@@ -992,6 +811,7 @@ const backgroundScrolls = [
           gameOver = true;
           playSound(playerExplodeSound);
           createExplosion(player.x + player.w/2, player.y + player.h/2, false);
+          removeMesh3D(b);
           enemyBullets.splice(i, 1);
         }
       }
@@ -1005,9 +825,6 @@ const backgroundScrolls = [
           enemySpawnTimer = 40;
         }
 
-        // ①軌跡：直進通常敵（spawnEnemyで生成される敵）は全て軌跡を描くため、個別スポーンは不要
-
-        // ③頑丈な敵：score500~1700で稼働
         if (score > 500 && score < 1650) {
           hardTwinSpawnTimer--;
           if (hardTwinSpawnTimer <= 0) {
@@ -1016,7 +833,6 @@ const backgroundScrolls = [
           }
         }
 
-        // ②ジグザグ敵：score>900 で稼働
         if (score > 900) {
           zigzagSpawnTimer--;
           if (zigzagSpawnTimer <= 0) {
@@ -1024,7 +840,6 @@ const backgroundScrolls = [
             zigzagSpawnTimer = randInt(60 * 3, 60 * 5);
           }
         }
-
       } else {
         if (!finalBossSpawned) {
           if (finalDelayFrames > 0) {
@@ -1039,43 +854,39 @@ const backgroundScrolls = [
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
 
-        // 追加敵の個別挙動
         if (e.type === "trail_enemy") {
           e.y += e.speed;
 
-          // 軌跡（当たり判定なし、4秒保持）
           e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: 240 });
           for (let tt = e.trail.length - 1; tt >= 0; tt--) {
             e.trail[tt].life--;
             if (e.trail[tt].life <= 0) e.trail.splice(tt, 1);
           }
 
-          // 2秒に1回、直進弾
           e.shotTimer--;
           if (e.shotTimer <= 0) {
             enemyBullets.push({ x: e.x + e.w/2 - 2, y: e.y + e.h, w: 4, h: 10, vx: 0, vy: 5 });
             e.shotTimer = 120;
           }
 
-          if (e.y > canvas.height + 50) {
+          if (e.y > FIELD_H + 50) {
+            removeMesh3D(e);
             enemies.splice(i, 1);
             continue;
           }
         } else if (e.type === "zigzag_enemy") {
           e.y += e.speed;
 
-          // ジグザグ（左右に振る）
           e.zigPhase += 0.08;
           e.x = e.baseX + Math.sin(e.zigPhase) * e.zigAmp;
 
           if (e.x < 0) { e.x = 0; e.baseX = e.x; }
-          if (e.x + e.w > canvas.width) { e.x = canvas.width - e.w; e.baseX = e.x; }
+          if (e.x + e.w > FIELD_W) { e.x = FIELD_W - e.w; e.baseX = e.x; }
 
-          // 3秒に1回、斜め±30度に2発
           e.shotTimer--;
           if (e.shotTimer <= 0) {
             const speed = 5;
-            const ang = Math.PI / 6; // 30deg
+            const ang = Math.PI / 6;
             const cx = e.x + e.w/2 - 2;
             const cy = e.y + e.h/2;
 
@@ -1084,14 +895,16 @@ const backgroundScrolls = [
             e.shotTimer = 120;
           }
 
-          if (e.y > canvas.height + 50) {
+          if (e.y > FIELD_H + 50) {
+            removeMesh3D(e);
             enemies.splice(i, 1);
             continue;
           }
         } else if (e.type === "hard_twin") {
           e.y += e.speed;
           if (e.hitFlash > 0) e.hitFlash--;
-          if (e.y > canvas.height + 50) {
+          if (e.y > FIELD_H + 50) {
+            removeMesh3D(e);
             enemies.splice(i, 1);
           }
           continue;
@@ -1100,18 +913,17 @@ const backgroundScrolls = [
         if (e.isMissile) {
           e.y += e.speed;
 
-          // trail (visual only) for straight enemies
           if (Array.isArray(e.trail)) {
-            e.trail.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, life: 240 }); // 4 seconds
+            e.trail.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, life: 240 });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
               if (e.trail[t].life <= 0) e.trail.splice(t, 1);
             }
-            // cap length (safety)
             if (e.trail.length > 260) e.trail.splice(0, e.trail.length - 260);
           }
 
-          if (e.y > canvas.height) {
+          if (e.y > FIELD_H) {
+            removeMesh3D(e);
             enemies.splice(i, 1);
             continue;
           }
@@ -1120,8 +932,8 @@ const backgroundScrolls = [
           if (e.x < 0) {
             e.x = 0;
             e.moveDir = 1;
-          } else if (e.x + e.w > canvas.width) {
-            e.x = canvas.width - e.w;
+          } else if (e.x + e.w > FIELD_W) {
+            e.x = FIELD_W - e.w;
             e.moveDir = -1;
           }
 
@@ -1132,23 +944,21 @@ const backgroundScrolls = [
           }
         } else {
           e.y += e.speed;
-          // 直進通常敵は全て軌跡（当たり判定なし、4秒保持）
           if (!e.isBoss && !e.isFinalBoss && !e.isMissile && Array.isArray(e.trail)) {
             e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: 240 });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
               if (e.trail[t].life <= 0) e.trail.splice(t, 1);
             }
-            // 念のため上限（重くならないように）
             if (e.trail.length > 260) e.trail.splice(0, e.trail.length - 260);
           }
 
-          if (e.y > canvas.height) {
+          if (e.y > FIELD_H) {
+            removeMesh3D(e);
             enemies.splice(i, 1);
             continue;
           }
 
-          // 中ボス：3秒に1回、直進弾を2発
           if (e.isBoss && !e.isFinalBoss) {
             if (typeof e.shotTimer !== "number") e.shotTimer = 180;
             e.shotTimer--;
@@ -1182,14 +992,16 @@ const backgroundScrolls = [
       for (let i = powerStars.length - 1; i >= 0; i--) {
         const s = powerStars[i];
         s.y += s.speed;
-        if (s.y > canvas.height) {
+        if (s.y > FIELD_H) {
+          removeMesh3D(s);
           powerStars.splice(i, 1);
           continue;
         }
         const rect = { x: s.x, y: s.y, w: s.size, h: s.size };
         if (rectHit(player, rect)) {
           powerUpActive = true;
-          powerUpTimer  = 60 * 8;   
+          powerUpTimer  = 60 * 8;
+          removeMesh3D(s);
           powerStars.splice(i, 1);
           playSound(starSound);
         }
@@ -1198,19 +1010,22 @@ const backgroundScrolls = [
 
     function updateDoubleShotStars() {
       if (score >= doubleShotEndScore) {
+        for (const s of doubleShotStars) removeMesh3D(s);
         doubleShotStars.length = 0;
         return;
       }
       for (let i = doubleShotStars.length - 1; i >= 0; i--) {
         const s = doubleShotStars[i];
         s.y += s.speed;
-        if (s.y > canvas.height) {
+        if (s.y > FIELD_H) {
+          removeMesh3D(s);
           doubleShotStars.splice(i, 1);
           continue;
         }
         const rect = { x: s.x, y: s.y, w: s.size, h: s.size };
         if (rectHit(player, rect)) {
           doubleShotActive = true;
+          removeMesh3D(s);
           doubleShotStars.splice(i, 1);
           playSound(starSound);
         }
@@ -1226,26 +1041,27 @@ const backgroundScrolls = [
             const exX = e.x + e.w / 2;
             const exY = e.y + e.h / 2;
 
+            removeMesh3D(b);
             bullets.splice(j, 1);
 
-            // 最初の敵撃破でBGM開始（解除済みなら）
             startBgmIfReady();
 
             if (e.isFinalBoss) {
               e.hp--;
               if (e.hp <= 0) {
                 playSound(playerExplodeSound);
-                startClearSequence(exX, exY); // ここで15重リング演出へ
+                removeMesh3D(e);
+                startClearSequence(exX, exY);
               }
               break;
             }
 
-            // 頑丈な敵（横2体）：HP=35
             if (e.type === "hard_twin") {
               if (typeof e.hp !== "number") e.hp = 35;
               e.hp--;
               e.hitFlash = 6;
               if (e.hp <= 0) {
+                removeMesh3D(e);
                 enemies.splice(i, 1);
                 score += 40;
                 playSound(enemyExplodeSound);
@@ -1261,6 +1077,7 @@ const backgroundScrolls = [
               if (typeof e.hp !== "number") e.hp = 20;
               e.hp--;
               if (e.hp <= 0) {
+                removeMesh3D(e);
                 enemies.splice(i, 1);
                 score += 10;
                 playSound(playerExplodeSound);
@@ -1270,6 +1087,7 @@ const backgroundScrolls = [
                 tryStartFinalMode();
               }
             } else if (e.isMissile) {
+              removeMesh3D(e);
               enemies.splice(i, 1);
               score += 20;
               playSound(enemyExplodeSound);
@@ -1278,6 +1096,7 @@ const backgroundScrolls = [
               if (!finalMode) checkBossSpawn();
               tryStartFinalMode();
             } else {
+              removeMesh3D(e);
               enemies.splice(i, 1);
               score += 10;
               playSound(enemyExplodeSound);
@@ -1303,45 +1122,14 @@ const backgroundScrolls = [
 
     // ===== 通常の爆発（敵・ミサイル用） =====
     const explosionPatterns = [
-      {
-        maxLife: 26,
-        radiusScale: 1.0,
-        rings: [
-          { r: 0.35, color: "#ff3300", alpha: 0.9 },
-          { r: 0.7,  color: "#ff9900", alpha: 0.7 },
-          { r: 1.0,  color: "#ffdd55", alpha: 0.5 }
-        ]
-      },
-      {
-        maxLife: 28,
-        radiusScale: 1.1,
-        rings: [
-          { r: 0.25, color: "#ffffcc", alpha: 0.9 },
-          { r: 0.55, color: "#ffdd33", alpha: 0.75 },
-          { r: 0.8,  color: "#ccff66", alpha: 0.6 },
-          { r: 1.0,  color: "#99ff66", alpha: 0.4 }
-        ]
-      },
-      {
-        maxLife: 24,
-        radiusScale: 0.9,
-        rings: [
-          { r: 0.3,  color: "#ff4444", alpha: 0.9 },
-          { r: 0.6,  color: "#ffee66", alpha: 0.7 },
-          { r: 0.9,  color: "#99ff66", alpha: 0.55 },
-          { r: 1.15, color: "#66ffee", alpha: 0.35 }
-        ]
-      },
-      {
-        maxLife: 30,
-        radiusScale: 1.2,
-        rings: [
-          { r: 0.2,  color: "#ffcc33", alpha: 1.0 },
-          { r: 0.5,  color: "#ffff66", alpha: 0.8 },
-          { r: 0.85, color: "#ff9933", alpha: 0.6 },
-          { r: 1.1,  color: "#99ff66", alpha: 0.4 }
-        ]
-      }
+      { maxLife: 26, radiusScale: 1.0,
+        rings: [ { r: 0.35, color: "#ff3300", alpha: 0.9 }, { r: 0.7,  color: "#ff9900", alpha: 0.7 }, { r: 1.0,  color: "#ffdd55", alpha: 0.5 } ] },
+      { maxLife: 28, radiusScale: 1.1,
+        rings: [ { r: 0.25, color: "#ffffcc", alpha: 0.9 }, { r: 0.55, color: "#ffdd33", alpha: 0.75 }, { r: 0.8,  color: "#ccff66", alpha: 0.6 }, { r: 1.0,  color: "#99ff66", alpha: 0.4 } ] },
+      { maxLife: 24, radiusScale: 0.9,
+        rings: [ { r: 0.3,  color: "#ff4444", alpha: 0.9 }, { r: 0.6,  color: "#ffee66", alpha: 0.7 }, { r: 0.9,  color: "#99ff66", alpha: 0.55 }, { r: 1.15, color: "#66ffee", alpha: 0.35 } ] },
+      { maxLife: 30, radiusScale: 1.2,
+        rings: [ { r: 0.2,  color: "#ffcc33", alpha: 1.0 }, { r: 0.5,  color: "#ffff66", alpha: 0.8 }, { r: 0.85, color: "#ff9933", alpha: 0.6 }, { r: 1.1,  color: "#99ff66", alpha: 0.4 } ] }
     ];
 
     function createExplosion(x, y, big) {
@@ -1352,10 +1140,7 @@ const backgroundScrolls = [
       const baseRadius = big ? baseSmall * 8 : baseSmall;
 
       explosions.push({
-        x,
-        y,
-        life: 0,
-        patternIndex,
+        x, y, life: 0, patternIndex,
         maxRadius: baseRadius * pattern.radiusScale
       });
     }
@@ -1368,446 +1153,10 @@ const backgroundScrolls = [
         ex.life++;
         const totalLife = pattern.maxLife * 2;
         if (ex.life >= totalLife) {
+          removeMesh3D(ex);
           explosions.splice(i, 1);
         }
       }
-    }
-
-    function drawExplosions() {
-      for (const ex of explosions) {
-        const pattern = explosionPatterns[ex.patternIndex];
-        const totalLife = pattern.maxLife * 2;
-        const t = ex.life / totalLife;
-        const ease = Math.sqrt(t);
-        const alphaBase = 1 - t;
-
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-
-        for (const ring of pattern.rings) {
-          const radius = ex.maxRadius * ring.r * ease;
-          if (radius <= 0) continue;
-
-          ctx.globalAlpha = alphaBase * ring.alpha;
-          ctx.fillStyle = ring.color;
-          ctx.beginPath();
-          ctx.arc(ex.x, ex.y, radius, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        ctx.globalAlpha = alphaBase * 0.9;
-        ctx.fillStyle = "#ffffee";
-        ctx.beginPath();
-        ctx.arc(ex.x, ex.y, ex.maxRadius * 0.15 * (1 - t), 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.restore();
-      }
-    }
-
-    // ===== 自機スプライト =====
-    function drawPlayerSprite(scale) {
-      const rows = playerMap.length;
-      const cols = playerMap[0].length;
-      const cell = 2 * scale;
-
-      const totalW = cols * cell;
-      const totalH = rows * cell;
-      const offsetX = -totalW / 2;
-      const offsetY = -totalH / 2;
-
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          const v = playerMap[y][x];
-          if (v === 0) continue;
-
-          let col;
-          switch (v) {
-            case 1: col = "#1fd13b"; break;
-            case 2: col = "#0a7f1f"; break;
-            case 3: col = "#ff3333"; break;
-            case 4: col = "#8fd8ff"; break;
-            case 5: col = "#555555"; break;
-            case 6: col = "#c07020"; break;
-            default: continue;
-          }
-
-          ctx.fillStyle = col;
-          ctx.fillRect(
-            offsetX + x * cell,
-            offsetY + y * cell,
-            cell,
-            cell
-          );
-        }
-      }
-    }
-
-    // ===== タイトル画面 =====
-    function drawTitleScreen() {
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // 星
-      ctx.fillStyle = "#fff";
-      for (const s of stars) {
-        ctx.fillRect(s.x, s.y, s.size, s.size);
-      }
-
-      ctx.fillStyle = "#00ffff";
-      ctx.textAlign = "center";
-      ctx.font = "40px monospace";
-      ctx.fillText("THE SHOOTINGⅡ", canvas.width / 2, 160);
-
-      ctx.font = "14px monospace";
-      ctx.fillStyle = "#88ff88";
-      ctx.fillText("1 PLAYER   XBOX / KEYBOARD", canvas.width / 2, 200);
-
-      const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
-      if (blinkOn) {
-        ctx.font = "20px monospace";
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText("PUSH ANY BUTTON", canvas.width / 2, 320);
-      }
-
-      ctx.font = "12px monospace";
-      ctx.fillStyle = "#cccccc";
-      ctx.fillText("", canvas.width / 2, 350);
-
-      ctx.save();
-      ctx.translate(canvas.width / 2, 480);
-      drawPlayerSprite(1.2);
-      ctx.restore();
-
-      ctx.textAlign = "left";
-    }
-
-    function drawPlayer() {
-      ctx.save();
-      ctx.translate(player.x + player.w / 2, player.y + player.h / 2);
-      drawPlayerSprite(1);
-      ctx.restore();
-    }
-
-    function drawBullets() {
-      ctx.fillStyle = "#ff0";
-      for (const b of bullets) {
-        ctx.fillRect(b.x, b.y, b.w, b.h);
-      }
-    }
-
-    function drawEnemyBullets() {
-      ctx.fillStyle = "#ff5555";
-      for (const b of enemyBullets) {
-        ctx.fillRect(b.x, b.y, b.w, b.h);
-      }
-    }
-
-    function drawEnemyTrails() {
-      ctx.save();
-      ctx.lineWidth = 3;
-      ctx.lineCap = "round";
-      ctx.globalCompositeOperation = "lighter";
-
-      for (const e of enemies) {
-        if (!Array.isArray(e.trail) || e.trail.length < 2) continue;
-        if (!e.trail || e.trail.length < 2) continue;
-
-        ctx.strokeStyle = e.trailColor || "rgba(255,255,0,0.8)";
-        ctx.beginPath();
-
-        for (let i = 0; i < e.trail.length; i++) {
-          const p = e.trail[i];
-          const a = (p.life / 240) * 0.9;
-          ctx.globalAlpha = a;
-          if (i === 0) ctx.moveTo(p.x, p.y);
-          else ctx.lineTo(p.x, p.y);
-        }
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    }
-
-
-    function updateBackgroundScroll() {
-      for (const bg of backgroundScrolls) {
-        if (!bg.triggered && score >= bg.triggerScore) {
-          bg.triggered = true;
-          if (bg.loaded) {
-            startBackgroundScroll(bg);
-          } else {
-            bg.pending = true;
-          }
-        }
-
-        if (!bg.active) continue;
-        bg.y += backgroundScrollSpeed;
-        if (bg.y >= canvas.height) {
-          bg.active = false;
-        }
-      }
-    }
-
-    function drawBackgroundScroll() {
-      for (const bg of backgroundScrolls) {
-        if (!bg.active || !bg.loaded) continue;
-
-        // back2特例：framesがあるときは交互に描く
-        const img = (bg.frames && bg.frames.length)
-          ? bg.frames[(Math.floor(frameCount / bg.frameInterval) % bg.frames.length)]
-          : bg.image;
-
-        ctx.drawImage(img, 0, bg.y, canvas.width, canvas.height);
-      }
-    }
-
-
-    function drawEnemies() {
-      for (const e of enemies) {
-        ctx.save();
-        ctx.translate(e.x, e.y);
-
-        if (e.isFinalBoss) {
-          if (finalBossImageLoaded) {
-            ctx.drawImage(finalBossImage, 0, 0, e.w, e.h);
-          } else {
-            ctx.fillStyle = "#ff9933";
-            ctx.fillRect(0, 0, e.w, e.h);
-          }
-
-        } else if (e.isBoss && !e.isFinalBoss) {
-          const rows = midBossMap.length;
-          const cols = midBossMap[0].length;
-          const cellW = e.w / cols;
-          const cellH = e.h / rows;
-
-          for (let y = 0; y < rows; y++) {
-            for (let x = 0; x < cols; x++) {
-              const v = midBossMap[y][x];
-              if (v === 0) continue;
-
-              let col;
-              if (v === 1)      col = "#3a9ad9"; // 暗い水色
-              else if (v === 2) col = "#73c7ff"; // 水色
-              else if (v === 3) col = "#0c2f73"; // 紺色
-              else if (v === 4) col = "#9c9c9c"; // グレー
-              else if (v === 5) col = "#555555"; // 濃いグレー
-              else if (v === 6) col = "#d43131"; // 赤
-              else if (v === 7) col = "#ff8c2a"; // オレンジ
-              else continue;
-
-              ctx.fillStyle = col;
-              ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
-            }
-          }
-
-        } else if (e.isMissile) {
-          const rows = missileMap.length;
-          const cols = missileMap[0].length;
-          const cellW = e.w / cols;
-          const cellH = e.h / rows;
-
-          for (let y = 0; y < rows; y++) {
-            for (let x = 0; x < cols; x++) {
-              const v = missileMap[rows - 1 - y][x]; // 下から参照（上下反転）
-              if (v === 0) continue;
-              ctx.fillStyle = (v === 1) ? "#ffffff" : "#ff3333";
-              ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
-            }
-          }
-
-          const flicker = (frameCount % 6) - 3;
-          ctx.fillStyle = "rgba(255,180,0,0.7)";
-          ctx.beginPath();
-          ctx.arc(e.w / 2, -6 + flicker * 0.5, 5, 0, Math.PI * 2);
-          ctx.fill();
-
-          ctx.fillStyle = "rgba(200,200,200,0.5)";
-          ctx.beginPath();
-          ctx.arc(e.w / 2 - 4, -14 + flicker * 0.3, 4, 0, Math.PI * 2);
-          ctx.arc(e.w / 2 + 3, -17 + flicker * 0.4, 3, 0, Math.PI * 2);
-          ctx.fill();
-
-        } else if (e.type === "hard_twin") {
-          const rows = hardTwinMap.length;
-          const cols = hardTwinMap[0].length;
-          const cellW = e.w / cols;
-          const cellH = e.h / rows;
-          const flash = (e.hitFlash > 0);
-
-          for (let yy = 0; yy < rows; yy++) {
-            for (let xx = 0; xx < cols; xx++) {
-              const v = hardTwinMap[yy][xx];
-              if (v === 0) continue;
-              ctx.fillStyle = "#9aa0a6";
-              ctx.fillRect(xx * cellW, yy * cellH, cellW, cellH);
-            }
-          }
-
-        } else {
-          ctx.translate(e.w / 2, e.h / 2);
-          ctx.fillStyle = e.color ? e.color : (e.isShooter ? "#ff66aa" : "#f33");
-          ctx.fillRect(-4, -12, 8, 24);
-          ctx.fillRect(-14, -3, 28, 6);
-          ctx.fillRect(-5, 7, 10, 4);
-
-          ctx.fillStyle = "#faa";
-          ctx.fillRect(-3, -9, 6, 5);
-        }
-
-        ctx.restore();
-      }
-    }
-
-    function drawUI() {
-      ctx.fillStyle = "#fff";
-      ctx.font = "18px sans-serif";
-      ctx.fillText("SCORE: " + score, 10, 24);
-    }
-
-    function drawGameOver() {
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#fff";
-      ctx.font = "32px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 10);
-      ctx.font = "12px sans-serif";
-      ctx.fillText("Rキーorゲームパッドの各ボタンでリスタート", canvas.width / 2, canvas.height / 2 + 30);
-      ctx.textAlign = "left";
-    }
-
-    function drawStarsPower() {
-      for (const s of powerStars) {
-        const cx = s.x + s.size / 2;
-        const cy = s.y + s.size / 2;
-        const r  = s.size / 2;
-        const blinkOn = Math.floor(frameCount / 10) % 2 === 0;
-        ctx.fillStyle = blinkOn ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.35)";
-        ctx.beginPath();
-        for (let i = 0; i < 5; i++) {
-          const ang  = (Math.PI * 2 / 5) * i - Math.PI / 2;
-          const ang2 = ang + Math.PI / 5;
-          const r1 = r;
-          const r2 = r * 0.4;
-          if (i === 0) ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
-          ctx.lineTo(cx + Math.cos(ang) * r1,  cy + Math.sin(ang) * r1);
-          ctx.lineTo(cx + Math.cos(ang2) * r2, cy + Math.sin(ang2) * r2);
-        }
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-
-    function drawDoubleShotStars() {
-      for (const s of doubleShotStars) {
-        const cx = s.x + s.size / 2;
-        const cy = s.y + s.size / 2;
-        const r  = s.size / 2;
-
-        const blinkOn = Math.floor(frameCount / 8) % 2 === 0;
-        ctx.fillStyle = blinkOn ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.35)";
-
-        ctx.beginPath();
-        for (let i = 0; i < 5; i++) {
-          const ang  = (Math.PI * 2 / 5) * i - Math.PI / 2;
-          const ang2 = ang + Math.PI / 5;
-          const r1 = r;
-          const r2 = r * 0.4;
-          if (i === 0) ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
-          ctx.lineTo(cx + Math.cos(ang) * r1,  cy + Math.sin(ang) * r1);
-          ctx.lineTo(cx + Math.cos(ang2) * r2, cy + Math.sin(ang2) * r2);
-        }
-        ctx.closePath();
-        ctx.fill();
-      }
-    }
-    // ===== クリア演出 =====
-    function drawClearScreen() {
-      if (endingImageLoaded) {
-        ctx.drawImage(endingImage, 0, 0, canvas.width, canvas.height);
-      } else {
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.font = "26px monospace";
-        ctx.fillText("CONGRATULATION!", canvas.width / 2, canvas.height / 2);
-        ctx.font = "16px monospace";
-        ctx.fillText("PUSH BUTTON TO TITLE", canvas.width / 2, canvas.height / 2 + 40);
-        ctx.textAlign = "left";
-      }
-    }
-
-    function updateClearExplosionPhase() {
-      clearFrame++;
-      updateFinalBigExplosion();
-
-      // 爆発が寿命を迎えたら白フラッシュ開始
-      if (finalBigExplosion && finalBigExplosion.life >= finalBigExplosion.maxLife && clearFlashTimer === 0) {
-        clearFlashTimer = 15; // フレーム数ぶん白フラッシュ
-      }
-
-      // フラッシュが終わったら次フェーズ（自機クルーズ）へ
-      if (clearFlashTimer > 0) {
-        clearFlashTimer--;
-        if (clearFlashTimer === 0) {
-          clearPhase = 2;
-          clearFrame = 0;
-          finalBigExplosion = null;
-        }
-      }
-    }
-
-function drawClearExplosionPhase() {
-  // 背景黒
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // 花火爆発描画
-  drawFinalBigExplosion();
-
-  // 爆発終了後の白フラッシュ
-  if (clearFlashTimer > 0) {
-    const alpha = clearFlashTimer / 15;
-    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-
-  // 最後に自機を必ず描く（常に表示）
-  drawPlayer();
-}
-
-    function updateCruisePhase() {
-      clearFrame++;
-
-      for (const s of stars) {
-        s.y += 1.5;
-        if (s.y > canvas.height) s.y -= canvas.height;
-      }
-
-      player.y -= 0.8;
-      const limitY = canvas.height * 0.3;
-      if (player.y < limitY) player.y = limitY;
-
-      if (clearFrame >= 60 * 5) {
-        clearPhase = 3;
-        clearFrame = 0;
-        gameCleared = true;
-      }
-    }
-
-    function drawCruisePhase() {
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.fillStyle = "#ffffff";
-      for (const s of stars) {
-        ctx.fillRect(s.x, s.y, s.size, s.size);
-      }
-
-      drawPlayer();
     }
 
     // ===== スコア関連フラグリセット =====
@@ -1817,7 +1166,18 @@ function drawClearExplosionPhase() {
       for (const k in doubleShotStarSpawned) delete doubleShotStarSpawned[k];
     }
 
+    function clearAllMeshes() {
+      for (const b of bullets) removeMesh3D(b);
+      for (const b of enemyBullets) removeMesh3D(b);
+      for (const e of enemies) removeMesh3D(e);
+      for (const s of powerStars) removeMesh3D(s);
+      for (const s of doubleShotStars) removeMesh3D(s);
+      for (const ex of explosions) removeMesh3D(ex);
+      removeAllTrails();
+    }
+
     function startGame() {
+      clearAllMeshes();
       bullets.length = 0;
       enemies.length = 0;
       enemyBullets.length = 0;
@@ -1835,8 +1195,8 @@ function drawClearExplosionPhase() {
       trailSpawnTimer = randInt(60 * 5, 60 * 10);
       hardTwinSpawnTimer = randInt(60 * 6, 60 * 12);
       zigzagSpawnTimer = randInt(60 * 6, 60 * 12);
-      player.x = canvas.width / 2 - 15;
-      player.y = canvas.height - 80;
+      player.x = FIELD_W / 2 - 15;
+      player.y = FIELD_H - 80;
       player.fireCooldown = 0;
       gameOver = false;
       gameStarted = true;
@@ -1855,6 +1215,7 @@ function drawClearExplosionPhase() {
     }
 
     function backToTitle() {
+      clearAllMeshes();
       bullets.length = 0;
       enemies.length = 0;
       enemyBullets.length = 0;
@@ -1887,88 +1248,812 @@ function drawClearExplosionPhase() {
       gameCleared = false;
     }
 
+    /* =========================================================================
+       ここから Three.js による3D描画レイヤー
+       ゲームロジック（座標・当たり判定・スコア等）は上と全く同じ2D平面上で計算し、
+       描画だけを立体（ボクセル押し出し）に変換して表示する。
+       ========================================================================= */
+
+    const webglCanvas = document.getElementById("webgl");
+    const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true });
+    renderer.setSize(FIELD_W, FIELD_H, false);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x02030a);
+    scene.fog = new THREE.Fog(0x02030a, 700, 1500);
+
+    // 見下ろし視点を維持したまま、立体感が出る程度に浅く傾けたカメラ
+    const CAM_TILT = THREE.MathUtils.degToRad(28);
+    const CAM_DIST = 900;
+    const camera = new THREE.OrthographicCamera();
+    function layoutCamera() {
+      const viewH = FIELD_H * 1.08;
+      const viewW = viewH * (FIELD_W / FIELD_H);
+      camera.left = -viewW / 2;
+      camera.right = viewW / 2;
+      camera.top = viewH / 2;
+      camera.bottom = -viewH / 2;
+      camera.near = 1;
+      camera.far = 3000;
+      camera.updateProjectionMatrix();
+    }
+    layoutCamera();
+    camera.position.set(0, Math.cos(CAM_TILT) * CAM_DIST, Math.sin(CAM_TILT) * CAM_DIST);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(0, 0, 0);
+
+    const hemiLight = new THREE.HemisphereLight(0x8fb0ff, 0x0a0a12, 0.6);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    sunLight.position.set(-250, 500, 350);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(1024, 1024);
+    sunLight.shadow.camera.left = -300;
+    sunLight.shadow.camera.right = 300;
+    sunLight.shadow.camera.top = 400;
+    sunLight.shadow.camera.bottom = -400;
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 1500;
+    scene.add(sunLight);
+
+    // 座標変換：2Dゲーム座標(x, y) -> 3Dワールド座標(X, Z)
+    function toWorldX(x) { return x - FIELD_W / 2; }
+    function toWorldZ(y) { return y - FIELD_H / 2; }
+
+    // ===== 地面 =====
+    const groundGeo = new THREE.PlaneGeometry(FIELD_W * 2.4, FIELD_H * 2.4, 1, 1);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x05060d, roughness: 1, metalness: 0 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // ===== 3Dスター背景 =====
+    const starGeo = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(stars.length * 3);
+    function syncStarGeometry() {
+      for (let i = 0; i < stars.length; i++) {
+        const s = stars[i];
+        starPositions[i*3]   = toWorldX(s.x);
+        starPositions[i*3+1] = 40 + s.size * 6;
+        starPositions[i*3+2] = toWorldZ(s.y);
+      }
+      starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+      starGeo.attributes.position.needsUpdate = true;
+    }
+    syncStarGeometry();
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: false });
+    const starPoints = new THREE.Points(starGeo, starMat);
+    scene.add(starPoints);
+
+    // ===== スクロール背景画像（地面に貼るワイプ演出） =====
+    const textureLoader = new THREE.TextureLoader();
+
+    function createBackgroundScroll(src, triggerScore) {
+      const state = {
+        loaded: false, triggered: false, pending: false, active: false,
+        y: -FIELD_H, triggerScore, mesh: null
+      };
+      textureLoader.load(src, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: false });
+        const geo = new THREE.PlaneGeometry(FIELD_W, FIELD_H);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = 0.5;
+        mesh.visible = false;
+        scene.add(mesh);
+        state.mesh = mesh;
+        state.loaded = true;
+        if (state.pending) startBackgroundScroll(state);
+      });
+      return state;
+    }
+
+    function createBackgroundScroll2Frame(src0, src1, triggerScore, frameInterval) {
+      const state = {
+        loaded: false, triggered: false, pending: false, active: false,
+        y: -FIELD_H, triggerScore, mesh: null, frameInterval,
+        textures: [null, null], loadedCount: 0
+      };
+      const onTexLoaded = (tex, idx) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        state.textures[idx] = tex;
+        state.loadedCount++;
+        if (state.loadedCount >= 2) {
+          const mat = new THREE.MeshBasicMaterial({ map: state.textures[0], transparent: false });
+          const geo = new THREE.PlaneGeometry(FIELD_W, FIELD_H);
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.position.y = 0.5;
+          mesh.visible = false;
+          scene.add(mesh);
+          state.mesh = mesh;
+          state.loaded = true;
+          if (state.pending) startBackgroundScroll(state);
+        }
+      };
+      textureLoader.load(src0, t => onTexLoaded(t, 0));
+      textureLoader.load(src1, t => onTexLoaded(t, 1));
+      return state;
+    }
+
+    const backgroundScrollSpeed = 0.9;
+    const backgroundScrolls = [
+      createBackgroundScroll("Game/back1.png", 1650),
+      createBackgroundScroll2Frame("Game/back2_0.png", "Game/back2_1.png", 1000, 12)
+    ];
+
+    function startBackgroundScroll(bg) {
+      bg.y = -FIELD_H;
+      bg.active = true;
+      bg.pending = false;
+      if (bg.mesh) bg.mesh.visible = true;
+    }
+
+    function resetBackgroundScrolls() {
+      for (const bg of backgroundScrolls) {
+        bg.triggered = false;
+        bg.pending = false;
+        bg.active = false;
+        bg.y = -FIELD_H;
+        if (bg.mesh) bg.mesh.visible = false;
+      }
+    }
+
+    function updateBackgroundScroll() {
+      for (const bg of backgroundScrolls) {
+        if (!bg.triggered && score >= bg.triggerScore) {
+          bg.triggered = true;
+          if (bg.loaded) startBackgroundScroll(bg);
+          else bg.pending = true;
+        }
+
+        if (!bg.active) continue;
+        bg.y += backgroundScrollSpeed;
+        if (bg.y >= FIELD_H) {
+          bg.active = false;
+          if (bg.mesh) bg.mesh.visible = false;
+          continue;
+        }
+        if (bg.mesh) {
+          bg.mesh.position.set(0, 0.5, bg.y);
+          if (bg.textures) {
+            const idx = Math.floor(frameCount / bg.frameInterval) % bg.textures.length;
+            if (bg.mesh.material.map !== bg.textures[idx]) {
+              bg.mesh.material.map = bg.textures[idx];
+              bg.mesh.material.needsUpdate = true;
+            }
+          }
+        }
+      }
+    }
+
+    // ===== ボクセル風ジオメトリ生成 =====
+    function buildVoxelGeometry(map, colorMap, w, h, height) {
+      const rows = map.length;
+      const cols = map[0].length;
+      const cellW = w / cols;
+      const cellD = h / rows;
+      const unitBox = new THREE.BoxGeometry(1, 1, 1);
+      const parts = [];
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const v = map[y][x];
+          const colorHex = colorMap[v];
+          if (!colorHex) continue;
+
+          const g = unitBox.clone();
+          g.scale(cellW * 1.02, height, cellD * 1.02);
+          g.translate(
+            (x - cols / 2 + 0.5) * cellW,
+            height / 2,
+            (y - rows / 2 + 0.5) * cellD
+          );
+
+          const color = new THREE.Color(colorHex);
+          const count = g.attributes.position.count;
+          const colors = new Float32Array(count * 3);
+          for (let i = 0; i < count; i++) {
+            colors[i*3] = color.r; colors[i*3+1] = color.g; colors[i*3+2] = color.b;
+          }
+          g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+          parts.push(g);
+        }
+      }
+      unitBox.dispose();
+
+      if (parts.length === 0) {
+        return new THREE.BoxGeometry(w, height, h);
+      }
+      const merged = mergeGeometries(parts, false);
+      parts.forEach(g => g.dispose());
+      return merged;
+    }
+
+    function buildRectVoxelGeometry(rects, height) {
+      const parts = [];
+      for (const r of rects) {
+        const g = new THREE.BoxGeometry(r.w, height, r.h);
+        g.translate(r.x + r.w / 2, height / 2, r.y + r.h / 2);
+        const color = new THREE.Color(r.color);
+        const count = g.attributes.position.count;
+        const colors = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          colors[i*3] = color.r; colors[i*3+1] = color.g; colors[i*3+2] = color.b;
+        }
+        g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        parts.push(g);
+      }
+      const merged = mergeGeometries(parts, false);
+      parts.forEach(g => g.dispose());
+      return merged;
+    }
+
+    function buildStarShapeGeometry(points, outerR, innerR, thickness) {
+      const shape = new THREE.Shape();
+      for (let i = 0; i < points; i++) {
+        const angA = (Math.PI * 2 / points) * i - Math.PI / 2;
+        const angB = angA + Math.PI / points;
+        const xa = Math.cos(angA) * outerR, ya = Math.sin(angA) * outerR;
+        const xb = Math.cos(angB) * innerR, yb = Math.sin(angB) * innerR;
+        if (i === 0) shape.moveTo(xa, ya); else shape.lineTo(xa, ya);
+        shape.lineTo(xb, yb);
+      }
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 8 });
+      geo.rotateX(-Math.PI / 2);
+      geo.translate(0, thickness, 0);
+      return geo;
+    }
+
+    // ---- 各スプライトの共有ジオメトリ／マテリアル ----
+    const playerGeo = buildVoxelGeometry(playerMap, PLAYER_COLORS, player.w, player.h, 10);
+    const playerMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.1 });
+    const playerMesh = new THREE.Mesh(playerGeo, playerMat);
+    playerMesh.castShadow = true;
+    playerMesh.receiveShadow = false;
+    scene.add(playerMesh);
+
+    const midBossGeo = buildVoxelGeometry(midBossMap, MIDBOSS_COLORS, 270, 270, 22);
+    const midBossMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.15 });
+
+    const missileGeo = buildVoxelGeometry(missileMap, MISSILE_COLORS, 12, 48, 8);
+    const missileMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.2 });
+
+    const hardTwinGeo = buildVoxelGeometry(hardTwinMap, HARDTWIN_COLORS, 120, 60, 16);
+    const hardTwinMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.2, emissive: 0x000000 });
+
+    // シンプル戦闘機（通常敵・軌跡敵・ジグザグ敵で共有、色だけ差し替え）
+    const enemyShipGeo = buildRectVoxelGeometry([
+      { x: -4,  y: -12, w: 8,  h: 24, color: "#ff3333" },
+      { x: -14, y: -3,  w: 28, h: 6,  color: "#ff3333" },
+      { x: -5,  y: 7,   w: 10, h: 4,  color: "#ff3333" }
+    ], 9);
+    enemyShipGeo.addGroup(0, enemyShipGeo.index.count, 0);
+    const canopyGeo = buildRectVoxelGeometry([{ x: -3, y: -9, w: 6, h: 5, color: "#ffaaaa" }], 10);
+
+    // 自機弾・敵弾
+    const playerBulletGeo = new THREE.BoxGeometry(6, 10, 12);
+    const playerBulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x554400, roughness: 0.3 });
+    const enemyBulletGeo = new THREE.BoxGeometry(4, 8, 10);
+    const enemyBulletMat = new THREE.MeshStandardMaterial({ color: 0xff5555, emissive: 0x550000, roughness: 0.3 });
+
+    // パワーアップ★（3方向ショット／2連ショット）
+    const powerStarGeo = buildStarShapeGeometry(5, 10, 4, 6);
+    const powerStarMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x666622, roughness: 0.3, metalness: 0.4 });
+    const doubleStarMat = new THREE.MeshStandardMaterial({ color: 0xbbeaff, emissive: 0x224466, roughness: 0.3, metalness: 0.4 });
+
+    // 最終ボス：MagicaVoxelモデルに差し替え予定の仮プレースホルダー（単色の直方体）
+    const finalBossUnitGeo = new THREE.BoxGeometry(1, 1, 1);
+    finalBossUnitGeo.translate(0, 0.5, 0);
+    const finalBossMat = new THREE.MeshStandardMaterial({ color: 0xff9933, roughness: 0.5, metalness: 0.25, emissive: 0x331100 });
+
+    function createMesh3D(entity) {
+      let mesh;
+      if (entity === player) {
+        return playerMesh;
+      } else if (entity.isFinalBoss) {
+        mesh = new THREE.Mesh(finalBossUnitGeo, finalBossMat);
+        mesh.castShadow = true;
+      } else if (entity.type === "hard_twin") {
+        const mat = hardTwinMat.clone();
+        mesh = new THREE.Mesh(hardTwinGeo, mat);
+        mesh.castShadow = true;
+      } else if (entity.isBoss) {
+        mesh = new THREE.Mesh(midBossGeo, midBossMat);
+        mesh.castShadow = true;
+      } else if (entity.isMissile) {
+        mesh = new THREE.Mesh(missileGeo, missileMat);
+        mesh.castShadow = true;
+      } else if (entity.w === player.w && entity.h === player.h && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
+        // 通常敵／軌跡敵／ジグザグ敵（簡易戦闘機ボクセル）
+        const group = new THREE.Group();
+        const hullColor = entity.color || (entity.isShooter ? "#ff66aa" : "#ff3333");
+        const hullMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.15, color: new THREE.Color(hullColor) });
+        const hull = new THREE.Mesh(enemyShipGeo, hullMat);
+        const canopy = new THREE.Mesh(canopyGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.1 }));
+        hull.castShadow = true; canopy.castShadow = true;
+        group.add(hull); group.add(canopy);
+        mesh = group;
+      } else if (entity.hasOwnProperty("vx") && entity.h > entity.w) {
+        // 弾（自機弾／敵弾は幅より高さが大きい細長い矩形）
+        const isPlayerBullet = entity.vy < 0 || (entity.vy === 0 && entity.vx !== 0 && entity.w === 6);
+        mesh = new THREE.Mesh(isPlayerBullet ? playerBulletGeo : enemyBulletGeo, isPlayerBullet ? playerBulletMat : enemyBulletMat);
+      } else if (entity.hasOwnProperty("size")) {
+        // パワーアップ★
+        const isDouble = doubleShotStars.includes(entity);
+        mesh = new THREE.Mesh(powerStarGeo, isDouble ? doubleStarMat : powerStarMat);
+        mesh.castShadow = true;
+      } else {
+        mesh = new THREE.Mesh(enemyShipGeo, new THREE.MeshStandardMaterial({ vertexColors: true }));
+      }
+      scene.add(mesh);
+      entity.mesh3d = mesh;
+      return mesh;
+    }
+
+    function removeMesh3D(entity) {
+      if (entity && entity.mesh3d) {
+        scene.remove(entity.mesh3d);
+        entity.mesh3d = null;
+      }
+    }
+
+    function getOrCreateMesh(entity) {
+      return entity.mesh3d || createMesh3D(entity);
+    }
+
+    function heightFor(entity) {
+      if (entity.isFinalBoss) return 6;
+      if (entity.type === "hard_twin") return 8;
+      if (entity.isBoss) return 12;
+      if (entity.isMissile) return 6;
+      if (entity.hasOwnProperty("vx")) return 5;
+      if (entity.hasOwnProperty("size")) return 3;
+      return 5;
+    }
+
+    function syncBoxEntities(list) {
+      for (const e of list) {
+        const mesh = getOrCreateMesh(e);
+        if (e.isFinalBoss) {
+          mesh.scale.set(e.w, 34, e.h);
+        }
+        const cx = e.x + e.w / 2;
+        const cy = e.y + e.h / 2;
+        mesh.position.set(toWorldX(cx), heightFor(e), toWorldZ(cy));
+
+        if (e.type === "zigzag_enemy") {
+          mesh.rotation.y = Math.max(-0.5, Math.min(0.5, -Math.sin(e.zigPhase) * 0.6));
+        } else if (e.isFinalBoss) {
+          mesh.rotation.y = 0;
+        } else {
+          mesh.rotation.y = 0;
+        }
+
+        if (e.type === "hard_twin" && mesh.material) {
+          const flashT = (e.hitFlash || 0) / 6;
+          mesh.material.emissive.setRGB(flashT, flashT, flashT);
+        }
+      }
+    }
+
+    // ===== 敵の光跡（トレイル）を3Dの発光ラインで表現 =====
+    const trailLines = new Map();
+    function syncTrails() {
+      const live = new Set();
+      for (const e of enemies) {
+        if (!Array.isArray(e.trail) || e.trail.length < 2) continue;
+        live.add(e);
+
+        let line = trailLines.get(e);
+        if (!line) {
+          const geo = new THREE.BufferGeometry();
+          const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+          line = new THREE.Line(geo, mat);
+          scene.add(line);
+          trailLines.set(e, line);
+        }
+
+        const n = e.trail.length;
+        const positions = new Float32Array(n * 3);
+        const colors = new Float32Array(n * 3);
+        const base = new THREE.Color(e.trailColor || "#ffff00");
+        for (let i = 0; i < n; i++) {
+          const p = e.trail[i];
+          positions[i*3]   = toWorldX(p.x);
+          positions[i*3+1] = 3;
+          positions[i*3+2] = toWorldZ(p.y);
+          const a = Math.max(0, Math.min(1, p.life / 240));
+          colors[i*3]   = base.r * a;
+          colors[i*3+1] = base.g * a;
+          colors[i*3+2] = base.b * a;
+        }
+        line.geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        line.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+        line.geometry.attributes.position.needsUpdate = true;
+        line.geometry.attributes.color.needsUpdate = true;
+      }
+
+      for (const [e, line] of trailLines) {
+        if (!live.has(e)) {
+          scene.remove(line);
+          trailLines.delete(e);
+        }
+      }
+    }
+
+    function removeAllTrails() {
+      for (const [, line] of trailLines) scene.remove(line);
+      trailLines.clear();
+    }
+
+    // ===== 通常爆発の3D表現（膨張する半透明の光球） =====
+    function ensureExplosionMesh(ex) {
+      if (ex.mesh3d) return ex.mesh3d;
+      const pattern = explosionPatterns[ex.patternIndex];
+      const group = new THREE.Group();
+      group.userData.rings = [];
+      for (const ring of pattern.rings) {
+        const geo = new THREE.SphereGeometry(1, 12, 8);
+        const mat = new THREE.MeshBasicMaterial({
+          color: ring.color, transparent: true, opacity: ring.alpha,
+          blending: THREE.AdditiveBlending, depthWrite: false
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        group.add(mesh);
+        group.userData.rings.push({ mesh, ring });
+      }
+      const coreGeo = new THREE.SphereGeometry(1, 10, 8);
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffee, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      group.add(core);
+      group.userData.core = core;
+
+      scene.add(group);
+      ex.mesh3d = group;
+      return group;
+    }
+
+    function syncExplosions() {
+      const live = new Set(explosions);
+      for (const ex of explosions) {
+        const pattern = explosionPatterns[ex.patternIndex];
+        const totalLife = pattern.maxLife * 2;
+        const t = ex.life / totalLife;
+        const ease = Math.sqrt(t);
+        const alphaBase = 1 - t;
+
+        const group = ensureExplosionMesh(ex);
+        group.position.set(toWorldX(ex.x), 6, toWorldZ(ex.y));
+
+        for (const { mesh, ring } of group.userData.rings) {
+          const radius = Math.max(0.001, ex.maxRadius * ring.r * ease);
+          mesh.scale.setScalar(radius);
+          mesh.material.opacity = Math.max(0, alphaBase * ring.alpha);
+        }
+        const core = group.userData.core;
+        core.scale.setScalar(Math.max(0.001, ex.maxRadius * 0.15 * (1 - t)));
+        core.material.opacity = Math.max(0, alphaBase * 0.9);
+      }
+
+      for (const child of [...scene.children]) {
+        // no-op safeguard; actual cleanup handled by removeMesh3D on splice
+      }
+      for (const [k] of trailLines) { /* trails cleaned separately */ }
+      void live;
+    }
+
+    // ===== 大ボス撃破：15重リング花火（地面に広がるリング＋中心の光） =====
+    let finalBigExplosionGroup = null;
+
+    function ensureFinalBigExplosionGroup() {
+      if (finalBigExplosionGroup) return finalBigExplosionGroup;
+      const group = new THREE.Group();
+      group.userData.rings = [];
+      for (const ring of finalBigExplosion.rings) {
+        const geo = new THREE.RingGeometry(0.94, 1, 64);
+        geo.rotateX(-Math.PI / 2);
+        const mat = new THREE.MeshBasicMaterial({
+          color: ring.color, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.y = 2;
+        group.add(mesh);
+        group.userData.rings.push({ mesh, ring });
+      }
+      const coreGeo = new THREE.SphereGeometry(1, 16, 12);
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.position.y = 20;
+      group.add(core);
+      group.userData.core = core;
+
+      group.position.set(toWorldX(finalBigExplosion.x), 0, toWorldZ(finalBigExplosion.y));
+      scene.add(group);
+      finalBigExplosionGroup = group;
+      return group;
+    }
+
+    function syncFinalBigExplosion() {
+      if (!finalBigExplosion) {
+        if (finalBigExplosionGroup) {
+          scene.remove(finalBigExplosionGroup);
+          finalBigExplosionGroup = null;
+        }
+        return;
+      }
+      const fw = finalBigExplosion;
+      const baseT = fw.life / fw.maxLife;
+      const group = ensureFinalBigExplosionGroup();
+
+      const tLead = Math.min(1, baseT);
+      const easeLead = Math.sqrt(tLead);
+      let fillColor;
+      if (baseT < 0.5) fillColor = 0xffe066;
+      else if (baseT < 0.8) fillColor = 0xffffff;
+      else fillColor = (fw.life % 6) < 3 ? 0xffffff : 0xffcccc;
+      group.userData.core.material.color.setHex(fillColor);
+      group.userData.core.material.opacity = 0.85 * (baseT > 0 ? 1 : 0);
+      group.userData.core.scale.setScalar(Math.max(0.001, fw.maxRadius * easeLead));
+
+      for (const { mesh, ring } of group.userData.rings) {
+        const tRaw = (baseT - ring.delay) / (1 - ring.delay);
+        if (tRaw <= 0 || tRaw >= 1.1) {
+          mesh.material.opacity = 0;
+          continue;
+        }
+        const t = Math.min(1, tRaw);
+        const ease = Math.sqrt(t);
+        const radius = Math.max(0.001, fw.maxRadius * ease);
+        mesh.scale.setScalar(radius);
+        mesh.material.opacity = Math.max(0, (1 - baseT) * 0.9);
+      }
+    }
+
+    // ===== プレイヤー機の見た目（バンク角） =====
+    function syncPlayerMesh() {
+      playerMesh.position.set(toWorldX(player.x + player.w/2), 6, toWorldZ(player.y + player.h/2));
+    }
+
+    let prevPlayerX = player.x;
+    function syncPlayerBanking() {
+      const dx = player.x - prevPlayerX;
+      prevPlayerX = player.x;
+      const targetTilt = Math.max(-0.5, Math.min(0.5, -dx * 0.12));
+      playerMesh.rotation.z += (targetTilt - playerMesh.rotation.z) * 0.2;
+    }
+
+    function syncStarfieldMotion() {
+      syncStarGeometry();
+    }
+
+    function render3D() {
+      syncBoxEntities(bullets);
+      syncBoxEntities(enemyBullets);
+      syncBoxEntities(enemies);
+      syncBoxEntities(powerStars);
+      syncBoxEntities(doubleShotStars);
+      syncTrails();
+      syncExplosions();
+      syncFinalBigExplosion();
+      syncPlayerMesh();
+      syncPlayerBanking();
+      syncStarfieldMotion();
+
+      ground.visible = (clearPhase === 0);
+      for (const bg of backgroundScrolls) {
+        if (bg.mesh) bg.mesh.visible = bg.active && clearPhase === 0;
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    /* =========================================================================
+       HUD（スコア・タイトル・ゲームオーバー等のテキストのみ）2D描画レイヤー
+       ========================================================================= */
+
+    function drawTitleHud() {
+      hctx.clearRect(0, 0, FIELD_W, FIELD_H);
+      hctx.textAlign = "center";
+
+      hctx.fillStyle = "#00ffff";
+      hctx.font = "40px monospace";
+      hctx.fillText("THE SHOOTINGⅡ", FIELD_W / 2, 160);
+
+      hctx.font = "14px monospace";
+      hctx.fillStyle = "#88ff88";
+      hctx.fillText("1 PLAYER   XBOX / KEYBOARD", FIELD_W / 2, 200);
+
+      const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
+      if (blinkOn) {
+        hctx.font = "20px monospace";
+        hctx.fillStyle = "#ffffff";
+        hctx.fillText("PUSH ANY BUTTON", FIELD_W / 2, 320);
+      }
+      hctx.textAlign = "left";
+    }
+
+    function drawUIHud() {
+      hctx.clearRect(0, 0, FIELD_W, FIELD_H);
+      hctx.fillStyle = "#fff";
+      hctx.font = "18px sans-serif";
+      hctx.fillText("SCORE: " + score, 10, 24);
+    }
+
+    function drawGameOverHud() {
+      hctx.fillStyle = "#fff";
+      hctx.font = "18px sans-serif";
+      hctx.fillText("SCORE: " + score, 10, 24);
+
+      hctx.fillStyle = "rgba(0,0,0,0.6)";
+      hctx.fillRect(0, 0, FIELD_W, FIELD_H);
+      hctx.fillStyle = "#fff";
+      hctx.font = "32px sans-serif";
+      hctx.textAlign = "center";
+      hctx.fillText("GAME OVER", FIELD_W / 2, FIELD_H / 2 - 10);
+      hctx.font = "12px sans-serif";
+      hctx.fillText("Rキーorゲームパッドの各ボタンでリスタート", FIELD_W / 2, FIELD_H / 2 + 30);
+      hctx.textAlign = "left";
+    }
+
+    function drawClearFlashHud() {
+      hctx.clearRect(0, 0, FIELD_W, FIELD_H);
+      if (clearFlashTimer > 0) {
+        const alpha = clearFlashTimer / 15;
+        hctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        hctx.fillRect(0, 0, FIELD_W, FIELD_H);
+      }
+    }
+
+    // ===== エンディング画像 =====
+    const endingImage = new Image();
+    endingImage.src = "Game/last.jpg";
+    let endingImageLoaded = false;
+    endingImage.onload = () => { endingImageLoaded = true; };
+
+    function drawClearScreenHud() {
+      if (endingImageLoaded) {
+        hctx.drawImage(endingImage, 0, 0, FIELD_W, FIELD_H);
+      } else {
+        hctx.fillStyle = "#000";
+        hctx.fillRect(0, 0, FIELD_W, FIELD_H);
+        hctx.fillStyle = "#ffffff";
+        hctx.textAlign = "center";
+        hctx.font = "26px monospace";
+        hctx.fillText("CONGRATULATION!", FIELD_W / 2, FIELD_H / 2);
+        hctx.font = "16px monospace";
+        hctx.fillText("PUSH BUTTON TO TITLE", FIELD_W / 2, FIELD_H / 2 + 40);
+        hctx.textAlign = "left";
+      }
+    }
+
+    function updateClearExplosionPhase() {
+      clearFrame++;
+      updateFinalBigExplosion();
+
+      if (finalBigExplosion && finalBigExplosion.life >= finalBigExplosion.maxLife && clearFlashTimer === 0) {
+        clearFlashTimer = 15;
+      }
+
+      if (clearFlashTimer > 0) {
+        clearFlashTimer--;
+        if (clearFlashTimer === 0) {
+          clearPhase = 2;
+          clearFrame = 0;
+          finalBigExplosion = null;
+        }
+      }
+    }
+
+    function updateCruisePhase() {
+      clearFrame++;
+
+      for (const s of stars) {
+        s.y += 1.5;
+        if (s.y > FIELD_H) s.y -= FIELD_H;
+      }
+
+      player.y -= 0.8;
+      const limitY = FIELD_H * 0.3;
+      if (player.y < limitY) player.y = limitY;
+
+      if (clearFrame >= 60 * 5) {
+        clearPhase = 3;
+        clearFrame = 0;
+        gameCleared = true;
+      }
+    }
+
     // ===== メインループ =====
     enemySpawnTimer = 30;
 
     function loop() {
       frameCount++;
 
+      try {
+        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        const pad0 = (activeGamepadIndex != null) ? pads[activeGamepadIndex] : pads[0];
+        const restartByGamepad = isGamepadRestartJustPressed(pad0);
 
-  try {
-    // ===== ここから今の loop の中身を全部入れる（既存処理そのまま） =====
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const pad0 = (activeGamepadIndex != null) ? pads[activeGamepadIndex] : pads[0];
+        if (clearPhase === 1) {
+          updateClearExplosionPhase();
+          syncPlayerMesh();
+          syncFinalBigExplosion();
+          ground.visible = false;
+          for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
+          renderer.render(scene, camera);
+          drawClearFlashHud();
+        } else if (clearPhase === 2) {
+          updateCruisePhase();
+          syncPlayerMesh();
+          syncStarfieldMotion();
+          ground.visible = false;
+          for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
+          renderer.render(scene, camera);
+          hctx.clearRect(0, 0, FIELD_W, FIELD_H);
+        } else if (clearPhase === 3) {
+          drawClearScreenHud();
+        } else if (!gameStarted) {
+          syncPlayerMesh();
+          syncStarfieldMotion();
+          ground.visible = true;
+          renderer.render(scene, camera);
+          drawTitleHud();
+          if (pad0 && pad0.buttons) {
+            const anyPressed = pad0.buttons.some(b => b.pressed);
+            if (anyPressed) {
+              unlockBgm();
+              startGame();
+            }
+          }
+        } else {
+          if (!gameCleared && gameOver && restartByGamepad) {
+            startGame();
+          }
 
-    const restartByGamepad = isGamepadRestartJustPressed(pad0);
+          if (!gameOver) {
+            updatePlayer();
+            updateBullets();
+            updateEnemyBullets();
+            updateEnemies();
+            updateStarsPower();
+            updateDoubleShotStars();
+            handleCollisions();
+            updateExplosions();
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    updateBackgroundScroll();
-    drawBackgroundScroll();
-
-    if (clearPhase === 1) {
-      updateClearExplosionPhase();
-      drawClearExplosionPhase();
-    } else if (clearPhase === 2) {
-      updateCruisePhase();
-      drawCruisePhase();
-    } else if (clearPhase === 3) {
-      drawClearScreen();
-    } else if (!gameStarted) {
-      drawTitleScreen();
-      if (pad0 && pad0.buttons) {
-        const anyPressed = pad0.buttons.some(b => b.pressed);
-        if (anyPressed) {
-          unlockBgm();
-          startGame();
+            updateBackgroundScroll();
+            render3D();
+            drawUIHud();
+          } else {
+            updateExplosions();
+            render3D();
+            drawGameOverHud();
+          }
         }
-      }
-    } else {
-      if (!gameCleared && gameOver && restartByGamepad) {
-        startGame();
+
+        lastError = null;
+      } catch (e) {
+        lastError = e;
+        console.error(e);
       }
 
-      if (!gameOver) {
-        updatePlayer();
-        updateBullets();
-        updateEnemyBullets();
-        updateEnemies();
-        updateStarsPower();
-        updateDoubleShotStars();
-        handleCollisions();
-        updateExplosions();
-
-        drawPlayer();
-        drawBullets();
-        drawEnemyBullets();
-        drawEnemyTrails();
-        drawEnemies();
-        drawExplosions();
-        drawStarsPower();
-        drawDoubleShotStars();
-        drawUI();
-      } else {
-        updateExplosions();
-        drawPlayer();
-        drawBullets();
-        drawEnemyBullets();
-        drawEnemyTrails();
-        drawEnemies();
-        drawExplosions();
-        drawUI();
-        drawGameOver();
-      }
+      requestAnimationFrame(loop);
     }
-    // ===== ここまで =====
 
-    lastError = null;
-  } catch (e) {
-    lastError = e;
+    function handleResize() {
+      layoutCamera();
+    }
+    window.addEventListener("resize", handleResize);
 
-  }
-
-  requestAnimationFrame(loop);
-}
     loop();
   </script>
 </body>
