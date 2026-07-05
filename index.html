@@ -1265,12 +1265,12 @@
     scene.background = new THREE.Color(0x02030a);
     scene.fog = new THREE.Fog(0x02030a, 700, 1500);
 
-    // 見下ろし視点を維持したまま、立体感が出る程度に浅く傾けたカメラ
-    const CAM_TILT = THREE.MathUtils.degToRad(28);
+    // 見下ろし視点を維持しつつ、斜め上からはっきり立体感の出る角度に傾けたカメラ
+    const CAM_TILT = THREE.MathUtils.degToRad(52);
     const CAM_DIST = 900;
     const camera = new THREE.OrthographicCamera();
     function layoutCamera() {
-      const viewH = FIELD_H * 1.08;
+      const viewH = FIELD_H * Math.cos(CAM_TILT) * 1.15;
       const viewW = viewH * (FIELD_W / FIELD_H);
       camera.left = -viewW / 2;
       camera.right = viewW / 2;
