@@ -1160,7 +1160,9 @@
     // 元のyは「奥から手前への進行度」としてそのまま奥行き（Z）に変換するので、
     // 自機の上下移動＝奥行き方向（前後）の移動になる。
     const BASE_ALT     = 45;    // 自機・敵が飛ぶ標準高度（固定）
-    const GLOBAL_X_SCALE = 0.75; // 横方向の表示スケール（画面に収まるよう少し圧縮。全エンティティ共通なので位置は揃う）
+    // 横方向の「位置」だけを圧縮して画面に収める（当たり判定の実サイズとズレて
+    // 見えないよう、各機体のジオメトリ幅そのものは圧縮しない＝見た目通りに当たる）
+    const GLOBAL_X_SCALE = 0.75;
     const DEPTH_SCALE   = 1.3;  // yの奥行き進行を実際の奥行きZに変換する係数（小さいほど手前に感じる）
 
     const camera = new THREE.PerspectiveCamera(56, CANVAS_W / CANVAS_H, 1, 6000);
@@ -1380,7 +1382,7 @@
 
     // ---- 各スプライトの共有ジオメトリ／マテリアル ----
     // 今は全部「仮の立方体」プレースホルダー。後でちゃんとした3Dモデル（MagicaVoxel等）に差し替え予定。
-    const playerGeo = new THREE.BoxGeometry(player.w * GLOBAL_X_SCALE, 22, player.h);
+    const playerGeo = new THREE.BoxGeometry(player.w, 22, player.h);
     const playerMat = new THREE.MeshStandardMaterial({ color: 0x2266ff, roughness: 0.5, metalness: 0.15 });
     const playerMesh = new THREE.Mesh(playerGeo, playerMat);
     playerMesh.castShadow = true;
@@ -1393,15 +1395,15 @@
     function buildMidBossTemplate() {
       const group = new THREE.Group();
 
-      const body = new THREE.Mesh(new THREE.BoxGeometry(70 * GLOBAL_X_SCALE, 50, 260), midBossMat);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(70, 50, 260), midBossMat);
       body.position.set(0, 25, 0);
       group.add(body);
 
-      const wing = new THREE.Mesh(new THREE.BoxGeometry(270 * GLOBAL_X_SCALE, 20, 90), midBossMat);
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(270, 20, 90), midBossMat);
       wing.position.set(0, 18, -10);
       group.add(wing);
 
-      const tailFin = new THREE.Mesh(new THREE.BoxGeometry(16 * GLOBAL_X_SCALE, 40, 40), midBossFinMat);
+      const tailFin = new THREE.Mesh(new THREE.BoxGeometry(16, 40, 40), midBossFinMat);
       tailFin.position.set(0, 45, 110);
       group.add(tailFin);
 
@@ -1410,14 +1412,14 @@
     }
     const midBossTemplate = buildMidBossTemplate();
 
-    const missileGeo = new THREE.BoxGeometry(12 * GLOBAL_X_SCALE, 18, 48);
+    const missileGeo = new THREE.BoxGeometry(12, 18, 48);
     const missileMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, emissive: 0x552222, roughness: 0.4 });
 
-    const hardTwinGeo = new THREE.BoxGeometry(120 * GLOBAL_X_SCALE, 34, 60);
+    const hardTwinGeo = new THREE.BoxGeometry(120, 34, 60);
     const hardTwinMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.6, metalness: 0.2, emissive: 0x000000 });
 
     // 通常敵・軌跡敵・ジグザグ敵で共有する簡易立方体（全部赤で統一）
-    const enemyShipGeo = new THREE.BoxGeometry(30 * GLOBAL_X_SCALE, 20, 30);
+    const enemyShipGeo = new THREE.BoxGeometry(30, 20, 30);
     const enemyShipMat = new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.5, metalness: 0.15 });
 
     // 自機弾・敵弾
@@ -1498,7 +1500,7 @@
       for (const e of list) {
         const mesh = getOrCreateMesh(e);
         if (e.isFinalBoss) {
-          mesh.scale.set(e.w * GLOBAL_X_SCALE, 60, e.h);
+          mesh.scale.set(e.w, 60, e.h);
         }
         const cx = e.x + e.w / 2;
         const cy = e.y + e.h / 2;
