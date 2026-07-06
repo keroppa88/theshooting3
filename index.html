@@ -1280,6 +1280,13 @@
     groundFar.position.set(0, 0, -GROUND_D / 2 + 400);
     scene.add(groundFar);
 
+    // 画面上部（地平線より上＝カメラが地面に当たらない方向を見ている部分)の背景。
+    // 地面と別の見た目（大きい・動かない・黒の色が違う）にならないよう、地面と同じ
+    // テクスチャ生成関数・同じ黒・同じ粒サイズ感で作り、画面全体に貼るスクリーン空間の
+    // 背景として使う（3D平面ではなくscene.backgroundとして設定）。
+    const skyBgTex = buildStarfieldGroundTexture({ starCount: 700, repeatX: 3, repeatY: 3 });
+    scene.background = skyBgTex;
+
     // 宇宙空間を進んでいる感じを出すため、地面のテクスチャをゆっくりスクロールさせる。
     // 近層のスクロール速度（ワールド座標換算）は空の星（Points）とも共有し、
     // 背景と地面のスクロールが一体化して見えるようにする。遠層は別の（遅い）速度でパララックスを出す。
@@ -1287,10 +1294,12 @@
     // 流れて見え、手前まで来たら奥へ戻って繰り返す＝奥から手前へ星が流れる前進感になる。
     const GROUND_SCROLL_UV_SPEED = 0.00025;
     const GROUND_FAR_SCROLL_RATIO = 0.4;
+    const SKY_BG_SCROLL_SPEED = 0.0006;
     let spaceScrollZ = 0;
     function updateGroundScroll() {
       groundMat.map.offset.y += GROUND_SCROLL_UV_SPEED;
       groundFarMat.map.offset.y += GROUND_SCROLL_UV_SPEED * GROUND_FAR_SCROLL_RATIO;
+      skyBgTex.offset.y += SKY_BG_SCROLL_SPEED;
       spaceScrollZ += GROUND_SCROLL_UV_SPEED * (GROUND_D / GROUND_NEAR_REPEAT_Y);
     }
 
@@ -1317,6 +1326,9 @@
     syncStarGeometry();
     const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: false });
     const starPoints = new THREE.Points(starGeo, starMat);
+    // 通常プレイ・タイトルでは背景（scene.background）の星で表示するため非表示にし、
+    // クリア後のクルーズ演出（星の中を飛び抜けていく特別なフェーズ）でのみ表示する。
+    starPoints.visible = false;
     scene.add(starPoints);
 
     // ===== スクロール背景画像（地面に貼るワイプ演出） =====
@@ -1809,6 +1821,7 @@
 
       ground.visible = (clearPhase === 0);
       groundFar.visible = (clearPhase === 0);
+      starPoints.visible = false;
       updateGroundScroll();
       for (const bg of backgroundScrolls) {
         if (bg.mesh) bg.mesh.visible = bg.active && clearPhase === 0;
@@ -1950,6 +1963,7 @@
           syncFinalBigExplosion();
           ground.visible = false;
           groundFar.visible = false;
+          starPoints.visible = false;
           for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
           renderer.render(scene, camera);
           drawClearFlashHud();
@@ -1959,6 +1973,7 @@
           syncStarfieldMotion();
           ground.visible = false;
           groundFar.visible = false;
+          starPoints.visible = true;
           for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
           renderer.render(scene, camera);
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
@@ -1969,6 +1984,7 @@
           syncStarfieldMotion();
           ground.visible = true;
           groundFar.visible = true;
+          starPoints.visible = false;
           updateGroundScroll();
           renderer.render(scene, camera);
           drawTitleHud();
