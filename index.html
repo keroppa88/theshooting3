@@ -1244,9 +1244,11 @@
       tex.repeat.set(repeatX, repeatY);
       return tex;
     }
-    const GROUND_W = 2600;
+    // 地面幅は奥行き最遠端でも画面幅を確実に覆うくらい広く取る。狭いと地面の左右の
+    // 端（側辺）が遠近法で収束して見え、地平線が三角形に「割れて」見えてしまう。
+    const GROUND_W = 9100;
     const GROUND_D = 5200;
-    const GROUND_REPEAT_X = 4;
+    const GROUND_REPEAT_X = 14;
     const GROUND_REPEAT_Y = 8;
     const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
     const groundMat = new THREE.MeshBasicMaterial({
@@ -1368,10 +1370,8 @@
     const SPAWN_GLOW_FAR_EXTENT = 900;  // ラインから奥側へのモヤの広がり
     const SPAWN_GLOW_NEAR_EXTENT = 300; // ラインから手前側への余韻の広がり
     const SPAWN_GLOW_DEPTH = SPAWN_GLOW_FAR_EXTENT + SPAWN_GLOW_NEAR_EXTENT;
-    // 地面幅よりずっと広く作り、遠くから見てもエリア境界で線が細くなったり
-    // 折れ曲がって見えたりしないようにする（画面幅を確実に超える左右一直線の線にする）
-    const SPAWN_GLOW_WIDTH = GROUND_W * 6;
-    const spawnGlowGeo = new THREE.PlaneGeometry(SPAWN_GLOW_WIDTH, SPAWN_GLOW_DEPTH, 1, 1);
+    // 地面と同じ幅（画面幅を確実に覆う広さ）にして、左右一直線のラインにする
+    const spawnGlowGeo = new THREE.PlaneGeometry(GROUND_W, SPAWN_GLOW_DEPTH, 1, 1);
     const spawnGlowMat = new THREE.MeshBasicMaterial({
       map: buildSpawnLineGlowTexture(), transparent: true, depthWrite: false
     });
