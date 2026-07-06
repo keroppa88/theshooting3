@@ -1214,10 +1214,13 @@
     function toDepthZ(y) { return (y - FIELD_H) * DEPTH_SCALE; }
 
     // ===== 地面（黒い宇宙空間に白い星を散りばめる。近層・遠層の二層構成） =====
-    // transparentBg: 背景を透明にして下の層（遠い星層）を透けさせる
+    // 各層のテクスチャは元の実装同様、背景を焼き込み済みの不透明画像として作る
+    // （背景を透明にしてαブレンドに頼ると、地面のような強い縮小・遠距離表示では
+    // 星がほぼ消えて見えるほど暗く滲んでしまうため）。二層の合成は各層のテクスチャの
+    // 背景色ではなく、近層メッシュのマテリアル全体のopacityで行う。
     function buildStarfieldGroundTexture(opts = {}) {
       const {
-        transparentBg = false,
+        bgColor = "#000000",
         starCount = 700,
         repeatX = 6, repeatY = 12,
         minR = 0.3, maxR = 1.6,
@@ -1227,10 +1230,8 @@
       const cvs = document.createElement("canvas");
       cvs.width = size; cvs.height = size;
       const c = cvs.getContext("2d");
-      if (!transparentBg) {
-        c.fillStyle = "#000000";
-        c.fillRect(0, 0, size, size);
-      }
+      c.fillStyle = bgColor;
+      c.fillRect(0, 0, size, size);
       for (let i = 0; i < starCount; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
@@ -1250,41 +1251,46 @@
     }
     const GROUND_W = 2600;
     const GROUND_D = 5200;
-    // 近層（手前寄りの星）：背景は透明にして、下にある遠層が透けて見えるようにする
+    // 星は自ら光る前提なので、シーンの照明（方向光など）に明るさが左右されないよう
+    // MeshBasicMaterial（非ライティング）を使い、常にテクスチャそのものの明るさで表示する。
+    // 近層：手前寄りの明るい星。マテリアルのopacityを1未満にして、下の遠層がうっすら
+    // 透けて見えるようにする（星自体の明るさはテクスチャに焼き込み済みなので保たれる）。
     const GROUND_NEAR_REPEAT_Y = 12;
     const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
-    const groundMat = new THREE.MeshStandardMaterial({
-      map: buildStarfieldGroundTexture({ transparentBg: true, repeatX: 6, repeatY: GROUND_NEAR_REPEAT_Y }),
-      color: 0xffffff, roughness: 1, metalness: 0, transparent: true
+    const groundMat = new THREE.MeshBasicMaterial({
+      map: buildStarfieldGroundTexture({ repeatX: 6, repeatY: GROUND_NEAR_REPEAT_Y }),
+      color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     // 「奥行き」はほぼ全て負のZ側で起きるので、地面もその範囲を覆うように奥へずらす
     ground.position.set(0, 0, -GROUND_D / 2 + 400);
-    ground.receiveShadow = true;
     scene.add(ground);
 
     // 遠層（さらに奥にある、より疎で暗い星）：不透明の黒背景で宇宙の地の色を担う
     const groundFarGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
-    const groundFarMat = new THREE.MeshStandardMaterial({
-      map: buildStarfieldGroundTexture({ starCount: 320, repeatX: 4, repeatY: 8, minR: 0.5, maxR: 1.3, minA: 0.15, maxA: 0.35 }),
-      color: 0xffffff, roughness: 1, metalness: 0
+    const groundFarMat = new THREE.MeshBasicMaterial({
+      map: buildStarfieldGroundTexture({ starCount: 320, repeatX: 4, repeatY: 8, minR: 0.5, maxR: 1.3, minA: 0.25, maxA: 0.45 }),
+      color: 0xffffff
     });
     const groundFar = new THREE.Mesh(groundFarGeo, groundFarMat);
     groundFar.rotation.x = -Math.PI / 2;
-    groundFar.position.set(0, -2, -GROUND_D / 2 + 400);
-    groundFar.receiveShadow = true;
+    // 近層と全く同じ平面に重ねる（わずかでもYをずらすと、遠距離での深度バッファ精度不足により
+    // 近層がちらついたり消えたりする原因になる）
+    groundFar.position.set(0, 0, -GROUND_D / 2 + 400);
     scene.add(groundFar);
 
     // 宇宙空間を進んでいる感じを出すため、地面のテクスチャをゆっくりスクロールさせる。
     // 近層のスクロール速度（ワールド座標換算）は空の星（Points）とも共有し、
     // 背景と地面のスクロールが一体化して見えるようにする。遠層は別の（遅い）速度でパララックスを出す。
+    // offset.y を+方向に進めると、テクスチャ上の各星は「奥（v=1側）→手前（v=0側）」に
+    // 流れて見え、手前まで来たら奥へ戻って繰り返す＝奥から手前へ星が流れる前進感になる。
     const GROUND_SCROLL_UV_SPEED = 0.00025;
     const GROUND_FAR_SCROLL_RATIO = 0.4;
     let spaceScrollZ = 0;
     function updateGroundScroll() {
-      groundMat.map.offset.y -= GROUND_SCROLL_UV_SPEED;
-      groundFarMat.map.offset.y -= GROUND_SCROLL_UV_SPEED * GROUND_FAR_SCROLL_RATIO;
+      groundMat.map.offset.y += GROUND_SCROLL_UV_SPEED;
+      groundFarMat.map.offset.y += GROUND_SCROLL_UV_SPEED * GROUND_FAR_SCROLL_RATIO;
       spaceScrollZ += GROUND_SCROLL_UV_SPEED * (GROUND_D / GROUND_NEAR_REPEAT_Y);
     }
 
@@ -1293,12 +1299,14 @@
     const starPositions = new Float32Array(stars.length * 3);
     function syncStarGeometry() {
       // 背景の星は遠くの空にある装飾なので、レーンの奥行きとは別に
-      // 広く・遠くへ引き伸ばして配置する（スカイボックス的な扱い）
+      // 広く・遠くへ引き伸ばして配置する（スカイボックス的な扱い）。
+      // 地面の近層と同じ spaceScrollZ を使い、奥から手前へ流れて手前で
+      // 奥へ戻る（地面と背景のスクロールが一体化する）ようにする。
       const DEPTH_RANGE = 3600;
       for (let i = 0; i < stars.length; i++) {
         const s = stars[i];
         const depthPhase = (s.y / FIELD_H) * DEPTH_RANGE;
-        const cycled = (depthPhase + spaceScrollZ) % DEPTH_RANGE;
+        const cycled = ((depthPhase - spaceScrollZ) % DEPTH_RANGE + DEPTH_RANGE) % DEPTH_RANGE;
         starPositions[i*3]   = toWorldX(s.x) * 2.4;
         starPositions[i*3+1] = 120 + s.size * 90;
         starPositions[i*3+2] = -600 - cycled;
