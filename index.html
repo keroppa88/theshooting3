@@ -1152,7 +1152,7 @@
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x02030a);
-    scene.fog = new THREE.Fog(0x02030a, 700, 1500);
+    scene.fog = new THREE.Fog(0x02030a, 500, 2000);
 
     // スターフォックス的な、自機の斜め後ろ上空からの追従（チェイス）カメラ。
     // 自機・敵・弾すべてが同じ座標変換（toWorldX/toDepthZ）を使うことで、
@@ -1161,7 +1161,7 @@
     // 自機の上下移動＝奥行き方向（前後）の移動になる。
     const BASE_ALT     = 45;    // 自機・敵が飛ぶ標準高度（固定）
     const GLOBAL_X_SCALE = 0.75; // 横方向の表示スケール（画面に収まるよう少し圧縮。全エンティティ共通なので位置は揃う）
-    const DEPTH_SCALE   = 2.6;  // yの奥行き進行を実際の奥行きZに変換する係数
+    const DEPTH_SCALE   = 1.3;  // yの奥行き進行を実際の奥行きZに変換する係数（小さいほど手前に感じる）
 
     const camera = new THREE.PerspectiveCamera(56, CANVAS_W / CANVAS_H, 1, 6000);
     function layoutCamera() {
