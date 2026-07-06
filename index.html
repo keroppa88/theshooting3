@@ -53,6 +53,7 @@
 
   <script type="module">
     import * as THREE from "three";
+    import { VOXLoader, VOXMesh } from "./vendor/three/VOXLoader.js";
 
     // ===== 画面/フィールド寸法（元の2Dゲームロジックの座標系をそのまま踏襲） =====
     const FIELD_W = 480;
@@ -1418,9 +1419,38 @@
     const hardTwinGeo = new THREE.BoxGeometry(120, 34, 60);
     const hardTwinMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.6, metalness: 0.2, emissive: 0x000000 });
 
-    // 通常敵・軌跡敵・ジグザグ敵で共有する簡易立方体（全部赤で統一）
+    // 通常敵・軌跡敵・ジグザグ敵で共有する立方体（MagicaVoxelモデルが読み込めるまでのフォールバック）
     const enemyShipGeo = new THREE.BoxGeometry(30, 20, 30);
     const enemyShipMat = new THREE.MeshStandardMaterial({ color: 0xdd2222, roughness: 0.5, metalness: 0.15 });
+
+    // MagicaVoxelで作った通常敵モデル。読み込み完了後にスポーンする敵から反映される。
+    // VOXMeshはコンストラクタがchunkを必須で取るため.clone()できない（引数無しで再構築されて例外になる）
+    // ので、ジオメトリ／マテリアルとスケールだけを取り出して使い回す。
+    let enemyShipVoxGeo = null;
+    let enemyShipVoxMat = null;
+    let enemyShipVoxScale = null;
+    const voxLoader = new VOXLoader();
+    voxLoader.load("Game/vox/teki.vox", (chunks) => {
+      if (!chunks || !chunks.length) return;
+      const chunk = chunks[0];
+      const vmesh = new VOXMesh(chunk);
+      vmesh.material.roughness = 0.5;
+      vmesh.material.metalness = 0.15;
+      enemyShipVoxGeo = vmesh.geometry;
+      enemyShipVoxMat = vmesh.material;
+      // ボクセルグリッドの見た目サイズを、実際の当たり判定（30×30）に合わせる
+      enemyShipVoxScale = { x: 30 / chunk.size.x, y: 30 / chunk.size.x, z: 30 / chunk.size.y };
+    });
+
+    function createEnemyShipMesh() {
+      if (enemyShipVoxGeo) {
+        const m = new THREE.Mesh(enemyShipVoxGeo, enemyShipVoxMat);
+        m.scale.set(enemyShipVoxScale.x, enemyShipVoxScale.y, enemyShipVoxScale.z);
+        m.castShadow = true;
+        return m;
+      }
+      return new THREE.Mesh(enemyShipGeo, enemyShipMat);
+    }
 
     // 自機弾・敵弾
     const playerBulletGeo = new THREE.BoxGeometry(6, 16, 12);
@@ -1455,9 +1485,8 @@
         mesh = new THREE.Mesh(missileGeo, missileMat);
         mesh.castShadow = true;
       } else if (entity.w === player.w && entity.h === player.h && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
-        // 通常敵／軌跡敵／ジグザグ敵（仮の赤い立方体）
-        mesh = new THREE.Mesh(enemyShipGeo, enemyShipMat);
-        mesh.castShadow = true;
+        // 通常敵／軌跡敵／ジグザグ敵（MagicaVoxelモデル。読み込み前は立方体）
+        mesh = createEnemyShipMesh();
       } else if (entity.hasOwnProperty("vx") && entity.h > entity.w) {
         // 弾（自機弾／敵弾は幅より高さが大きい細長い矩形）
         const isPlayerBullet = entity.vy < 0 || (entity.vy === 0 && entity.vx !== 0 && entity.w === 6);
@@ -1468,7 +1497,7 @@
         mesh = new THREE.Mesh(powerStarGeo, isDouble ? doubleStarMat : powerStarMat);
         mesh.castShadow = true;
       } else {
-        mesh = new THREE.Mesh(enemyShipGeo, enemyShipMat);
+        mesh = createEnemyShipMesh();
       }
       scene.add(mesh);
       entity.mesh3d = mesh;
