@@ -1144,16 +1144,21 @@
        描画だけを立体（ボクセル押し出し）に変換して表示する。
        ========================================================================= */
 
+    // 影は「地面から浮いて見える」原因になるため一旦オフ。この定数をtrueに戻せば復活する。
+    const ENABLE_SHADOWS = false;
+    // 地面・空・フォグを同じ色にして、地平線が浮き上がって見えないようにする（宇宙空間の一体感）
+    const SPACE_COLOR = 0x000000;
+
     const webglCanvas = document.getElementById("webgl");
     const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true });
     renderer.setSize(CANVAS_W, CANVAS_H, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = ENABLE_SHADOWS;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x02030a);
-    scene.fog = new THREE.Fog(0x02030a, 500, 2000);
+    scene.background = new THREE.Color(SPACE_COLOR);
+    scene.fog = new THREE.Fog(SPACE_COLOR, 500, 2000);
 
     // スターフォックス的な、自機の斜め後ろ上空からの追従（チェイス）カメラ。
     // 自機・敵・弾すべてが同じ座標変換（toWorldX/toDepthZ）を使うことで、
@@ -1183,7 +1188,7 @@
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.9);
     sunLight.position.set(-250, 600, 450);
     sunLight.target.position.set(0, BASE_ALT, -600);
-    sunLight.castShadow = true;
+    sunLight.castShadow = ENABLE_SHADOWS;
     sunLight.shadow.mapSize.set(1024, 1024);
     sunLight.shadow.camera.left = -500;
     sunLight.shadow.camera.right = 500;
