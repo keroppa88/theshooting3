@@ -1158,7 +1158,8 @@
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(SPACE_COLOR);
-    scene.fog = new THREE.Fog(SPACE_COLOR, 500, 2000);
+    // 出現ラインを遠くへ押し出す分、そこがフォグで消えてしまわないよう可視距離も広げる
+    scene.fog = new THREE.Fog(SPACE_COLOR, 500, 3200);
 
     // スターフォックス的な、自機の斜め後ろ上空からの追従（チェイス）カメラ。
     // 自機・敵・弾すべてが同じ座標変換（toWorldX/toDepthZ）を使うことで、
@@ -1169,7 +1170,9 @@
     // 横方向の「位置」だけを圧縮して画面に収める（当たり判定の実サイズとズレて
     // 見えないよう、各機体のジオメトリ幅そのものは圧縮しない＝見た目通りに当たる）
     const GLOBAL_X_SCALE = 0.75;
-    const DEPTH_SCALE   = 1.3;  // yの奥行き進行を実際の奥行きZに変換する係数（小さいほど手前に感じる）
+    // yの奥行き進行を実際の奥行きZに変換する係数。大きいほど敵の出現位置が遠く
+    // （画面奥＝上部）に見え、画面全体を使って手前まで進んでくるようになる。
+    const DEPTH_SCALE   = 2.2;
 
     const camera = new THREE.PerspectiveCamera(56, CANVAS_W / CANVAS_H, 1, 6000);
     function layoutCamera() {
@@ -1213,53 +1216,42 @@
     function toWorldX(x) { return (x - FIELD_W / 2) * GLOBAL_X_SCALE; }
     function toDepthZ(y) { return (y - FIELD_H) * DEPTH_SCALE; }
 
-    // ===== 地面（黒い宇宙空間に白い星を散りばめる。近層・遠層の二層構成） =====
-    // 各層のテクスチャは元の実装同様、背景を焼き込み済みの不透明画像として作る
-    // （背景を透明にしてαブレンドに頼ると、地面のような強い縮小・遠距離表示では
-    // 星がほぼ消えて見えるほど暗く滲んでしまうため）。二層の合成は各層のテクスチャの
-    // 背景色ではなく、近層メッシュのマテリアル全体のopacityで行う。
-    function buildStarfieldGroundTexture(opts = {}) {
-      const {
-        bgColor = "#000000",
-        starCount = 700,
-        repeatX = 6, repeatY = 12,
-        minR = 1.3, maxR = 6.8,
-        minA = 0.4, maxA = 0.6
-      } = opts;
+    // ===== TRON風グリッド地面 =====
+    // 白い罫線（方眼紙状、大きめの正方形）だけを焼き込んだテクスチャを作り、
+    // 実際の色はマテリアルのcolorで毎フレーム着色する（時間経過で色が変わる
+    // サイバーパンク演出のため、テクスチャ自体を再生成せずに済むようにする）。
+    function buildGridLineTexture(opts = {}) {
+      const { cellPx = 171, lineWidth = 2, glow = 3, repeatX = 4, repeatY = 8 } = opts;
       const size = 1024;
       const cvs = document.createElement("canvas");
       cvs.width = size; cvs.height = size;
       const c = cvs.getContext("2d");
-      c.fillStyle = bgColor;
+      c.fillStyle = "#000000";
       c.fillRect(0, 0, size, size);
-      for (let i = 0; i < starCount; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const r = Math.random() * (maxR - minR) + minR;
-        const a = Math.random() * (maxA - minA) + minA;
-        c.fillStyle = `rgba(255,255,255,${a})`;
-        c.beginPath();
-        c.arc(x, y, r, 0, Math.PI * 2);
-        c.fill();
+      c.strokeStyle = "#ffffff";
+      c.lineWidth = lineWidth;
+      c.shadowColor = "#ffffff";
+      c.shadowBlur = glow;
+      for (let x = 0; x <= size; x += cellPx) {
+        c.beginPath(); c.moveTo(x, 0); c.lineTo(x, size); c.stroke();
+      }
+      for (let y = 0; y <= size; y += cellPx) {
+        c.beginPath(); c.moveTo(0, y); c.lineTo(size, y); c.stroke();
       }
       const tex = new THREE.CanvasTexture(cvs);
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(repeatX, repeatY);
-      tex.colorSpace = THREE.SRGBColorSpace;
       return tex;
     }
     const GROUND_W = 2600;
     const GROUND_D = 5200;
-    // 星は自ら光る前提なので、シーンの照明（方向光など）に明るさが左右されないよう
-    // MeshBasicMaterial（非ライティング）を使い、常にテクスチャそのものの明るさで表示する。
-    // 近層：手前寄りの明るい星。マテリアルのopacityを1未満にして、下の遠層がうっすら
-    // 透けて見えるようにする（星自体の明るさはテクスチャに焼き込み済みなので保たれる）。
-    const GROUND_NEAR_REPEAT_Y = 12;
+    const GROUND_REPEAT_X = 4;
+    const GROUND_REPEAT_Y = 8;
     const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
     const groundMat = new THREE.MeshBasicMaterial({
-      map: buildStarfieldGroundTexture({ repeatX: 6, repeatY: GROUND_NEAR_REPEAT_Y }),
-      color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false
+      map: buildGridLineTexture({ repeatX: GROUND_REPEAT_X, repeatY: GROUND_REPEAT_Y }),
+      color: 0xffffff
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
@@ -1267,31 +1259,68 @@
     ground.position.set(0, 0, -GROUND_D / 2 + 400);
     scene.add(ground);
 
-    // 遠層（さらに奥にある、より疎で暗い星）：不透明の黒背景で宇宙の地の色を担う
-    const groundFarGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
-    const groundFarMat = new THREE.MeshBasicMaterial({
-      map: buildStarfieldGroundTexture({ starCount: 320, repeatX: 4, repeatY: 8, minR: 2.0, maxR: 5.5, minA: 0.25, maxA: 0.45 }),
-      color: 0xffffff
-    });
-    const groundFar = new THREE.Mesh(groundFarGeo, groundFarMat);
-    groundFar.rotation.x = -Math.PI / 2;
-    // 近層と全く同じ平面に重ねる（わずかでもYをずらすと、遠距離での深度バッファ精度不足により
-    // 近層がちらついたり消えたりする原因になる）
-    groundFar.position.set(0, 0, -GROUND_D / 2 + 400);
-    scene.add(groundFar);
+    // 地平線より上の空間：黒（地平線側）からサイバーパンクな気分色（上空側）への
+    // グラデーション。気分色は時間経過・スコアに応じて変化する（updateCyberColorsが
+    // 毎フレーム再描画する。scene.backgroundとして使うスクリーン空間の背景）。
+    const skyGradientCanvas = document.createElement("canvas");
+    skyGradientCanvas.width = 2;
+    skyGradientCanvas.height = 512;
+    const skyGradientTex = new THREE.CanvasTexture(skyGradientCanvas);
+    scene.background = skyGradientTex;
+    function paintSkyGradient(topColor) {
+      const c = skyGradientCanvas.getContext("2d");
+      const h = skyGradientCanvas.height;
+      const grad = c.createLinearGradient(0, h, 0, 0);
+      grad.addColorStop(0, "#000000");
+      grad.addColorStop(1, `rgb(${topColor.r},${topColor.g},${topColor.b})`);
+      c.fillStyle = grad;
+      c.fillRect(0, 0, skyGradientCanvas.width, h);
+      skyGradientTex.needsUpdate = true;
+    }
 
-    // 画面上部（地平線より上＝カメラが地面に当たらない方向を見ている部分)の背景。
-    // 地面と別の見た目（大きい・動かない・黒の色が違う）にならないよう、地面と同じ
-    // テクスチャ生成関数・同じ黒・同じ粒サイズ感で作り、画面全体に貼るスクリーン空間の
-    // 背景として使う（3D平面ではなくscene.backgroundとして設定）。
-    const skyBgTex = buildStarfieldGroundTexture({ starCount: 700, repeatX: 3, repeatY: 3 });
-    scene.background = skyBgTex;
+    // ===== サイバーパンク配色（グリッド線・出現ライン・空の気分色が時間経過で変化） =====
+    // 線の色と空の色は必ず違う色になるよう、パレット上で半周分ずらして選ぶ。
+    const CYBER_PALETTE = [
+      { r: 140, g: 210, b: 255 }, // 青白
+      { r: 60,  g: 255, b: 140 }, // 緑
+      { r: 190, g: 255, b: 60  }, // 黄緑
+      { r: 255, g: 225, b: 60  }, // 黄色
+      { r: 255, g: 70,  b: 60  }, // 赤
+    ];
+    function paletteColorAt(phase) {
+      const n = CYBER_PALETTE.length;
+      const t = ((phase % n) + n) % n;
+      const i0 = Math.floor(t);
+      const i1 = (i0 + 1) % n;
+      const f = t - i0;
+      const c0 = CYBER_PALETTE[i0], c1 = CYBER_PALETTE[i1];
+      return {
+        r: Math.round(c0.r + (c1.r - c0.r) * f),
+        g: Math.round(c0.g + (c1.g - c0.g) * f),
+        b: Math.round(c0.b + (c1.b - c0.b) * f),
+      };
+    }
+    function currentColorPhase() {
+      // 時間経過でゆっくり連続的に巡回しつつ、スコア（プレイ内容）でも位相をずらす
+      const t = frameCount / 60;
+      return t * 0.025 + (score % 100) * 0.031;
+    }
+    function updateCyberColors() {
+      const phase = currentColorPhase();
+      const lineColor = paletteColorAt(phase);
+      const skyColor = paletteColorAt(phase + CYBER_PALETTE.length / 2);
+      groundMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
+      spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
+      paintSkyGradient(skyColor);
+    }
 
-    // ===== 敵出現ラインの発光演出 =====
+    // ===== 敵出現ライン（地平線）の発光演出 =====
     // 敵は常に同じ横線（y≈0、画面奥のほぼ固定の奥行き）から出現するため単調に見える。
-    // その出現ラインに沿って緑の細い線を左右に引き、その奥（さらに奥行きが深い側）に
-    // 緑青のモヤ（中央が厚く、左右端でフェードアウト）をかけ、手前側にはごく薄い
-    // 発光の余韻だけを残す＝異世界からワープして出現したような演出。ゲームロジック
+    // その出現ライン＝地平線に沿って細い線を左右に引き、その奥（さらに奥行きが深い側）に
+    // サイバーパンク風のモヤ（中央が厚く、左右端でフェードアウト）をかけ、手前側には
+    // ごく薄い発光の余韻だけを残す＝異世界からワープして出現したような演出。
+    // 色は白のみで焼き込み、実際の色相はマテリアルのcolor（updateCyberColorsが毎フレーム
+    // 更新）で決める＝グリッド線と同じ色に時間経過で変化する。ゲームロジック
     // （出現座標・当たり判定）には一切影響しない、純粋な見た目だけの追加要素。
     function buildSpawnLineGlowTexture() {
       const W = 512, H = 256;
@@ -1308,10 +1337,10 @@
         for (let x = 0; x < W; x++) {
           const hFrac = x / (W - 1);
           const edge = Math.max(0, 1 - Math.abs(hFrac - 0.5) * 2.15); // 中央=1、両端=0
-          let r = 40, g = 220, b = 180, a = 0;
+          let a = 0;
           if (Math.abs(distFromLine) < lineHalfWidth) {
-            // 出現ラインそのもの：端までまっすぐ伸びる細い緑の線
-            r = 60; g = 255; b = 160; a = 235;
+            // 出現ラインそのもの：端までまっすぐ伸びる細い線
+            a = 235;
           } else if (distFromLine < 0) {
             // このテクスチャ上でのv<lineCenter側は、実際の描画では手前(近)側になる：
             // 宇宙空間に戻る、ごく薄い発光の余韻のみ
@@ -1321,19 +1350,14 @@
             a = Math.round(160 * intensity);
           } else {
             // v>lineCenter側は、実際の描画では奥側になる：
-            // サイバーパンク風の青緑混色モヤ。中央が厚く、線から離れるほど＆端に
-            // 近いほど薄くなる。線の近くは緑、離れるほど青寄りに色が混ざる。
+            // モヤ。中央が厚く、線から離れるほど＆端に近いほど薄くなる
             const d = (distFromLine - lineHalfWidth) / (1 - lineCenter - lineHalfWidth);
             const falloff = Math.max(0, 1 - d);
             const intensity = Math.pow(falloff, 1.6) * edge;
-            const mix = Math.min(1, d * 2.2); // 0=線の近く(緑寄り)、1=遠く(青寄り)
-            r = Math.round(30 + 40 * mix);
-            g = Math.round(230 - 90 * mix);
-            b = Math.round(150 + 105 * mix);
             a = Math.round(215 * intensity);
           }
           const idx = (y * W + x) * 4;
-          data[idx] = r; data[idx + 1] = g; data[idx + 2] = b; data[idx + 3] = a;
+          data[idx] = 255; data[idx + 1] = 255; data[idx + 2] = 255; data[idx + 3] = a;
         }
       }
       c.putImageData(img, 0, 0);
@@ -1341,10 +1365,13 @@
       return tex;
     }
     const SPAWN_LINE_Z = toDepthZ(0);   // 敵が出現するy≈0に対応する奥行き
-    const SPAWN_GLOW_FAR_EXTENT = 500;  // ラインから奥側へのモヤの広がり
-    const SPAWN_GLOW_NEAR_EXTENT = 200; // ラインから手前側への余韻の広がり
+    const SPAWN_GLOW_FAR_EXTENT = 900;  // ラインから奥側へのモヤの広がり
+    const SPAWN_GLOW_NEAR_EXTENT = 300; // ラインから手前側への余韻の広がり
     const SPAWN_GLOW_DEPTH = SPAWN_GLOW_FAR_EXTENT + SPAWN_GLOW_NEAR_EXTENT;
-    const spawnGlowGeo = new THREE.PlaneGeometry(GROUND_W, SPAWN_GLOW_DEPTH, 1, 1);
+    // 地面幅よりずっと広く作り、遠くから見てもエリア境界で線が細くなったり
+    // 折れ曲がって見えたりしないようにする（画面幅を確実に超える左右一直線の線にする）
+    const SPAWN_GLOW_WIDTH = GROUND_W * 6;
+    const spawnGlowGeo = new THREE.PlaneGeometry(SPAWN_GLOW_WIDTH, SPAWN_GLOW_DEPTH, 1, 1);
     const spawnGlowMat = new THREE.MeshBasicMaterial({
       map: buildSpawnLineGlowTexture(), transparent: true, depthWrite: false
     });
@@ -1353,20 +1380,16 @@
     spawnGlow.position.set(0, 3, SPAWN_LINE_Z + (SPAWN_GLOW_NEAR_EXTENT - SPAWN_GLOW_FAR_EXTENT) / 2);
     scene.add(spawnGlow);
 
-    // 宇宙空間を進んでいる感じを出すため、地面のテクスチャをゆっくりスクロールさせる。
-    // 近層のスクロール速度（ワールド座標換算）は空の星（Points）とも共有し、
-    // 背景と地面のスクロールが一体化して見えるようにする。遠層は別の（遅い）速度でパララックスを出す。
-    // offset.y を+方向に進めると、テクスチャ上の各星は「奥（v=1側）→手前（v=0側）」に
-    // 流れて見え、手前まで来たら奥へ戻って繰り返す＝奥から手前へ星が流れる前進感になる。
+    // 前進している感じを出すため、地面のグリッドをゆっくりスクロールさせる。
+    // このスクロール速度（ワールド座標換算）はクルーズ演出の空の星（Points）とも共有する。
+    // offset.y を+方向に進めると、テクスチャ上の線は「奥（v=1側）→手前（v=0側）」に
+    // 流れて見え、手前まで来たら奥へ戻って繰り返す＝奥から手前へ流れる前進感になる。
     const GROUND_SCROLL_UV_SPEED = 0.00025;
-    const GROUND_FAR_SCROLL_RATIO = 0.4;
-    const SKY_BG_SCROLL_SPEED = 0.0006;
     let spaceScrollZ = 0;
     function updateGroundScroll() {
       groundMat.map.offset.y += GROUND_SCROLL_UV_SPEED;
-      groundFarMat.map.offset.y += GROUND_SCROLL_UV_SPEED * GROUND_FAR_SCROLL_RATIO;
-      skyBgTex.offset.y += SKY_BG_SCROLL_SPEED;
-      spaceScrollZ += GROUND_SCROLL_UV_SPEED * (GROUND_D / GROUND_NEAR_REPEAT_Y);
+      spaceScrollZ += GROUND_SCROLL_UV_SPEED * (GROUND_D / GROUND_REPEAT_Y);
+      updateCyberColors();
     }
 
     // ===== 3Dスター背景 =====
@@ -1886,7 +1909,6 @@
       syncStarfieldMotion();
 
       ground.visible = (clearPhase === 0);
-      groundFar.visible = (clearPhase === 0);
       spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
       updateGroundScroll();
@@ -2029,7 +2051,6 @@
           syncPlayerMesh();
           syncFinalBigExplosion();
           ground.visible = false;
-          groundFar.visible = false;
           spawnGlow.visible = false;
           starPoints.visible = false;
           for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
@@ -2040,7 +2061,6 @@
           syncPlayerMesh();
           syncStarfieldMotion();
           ground.visible = false;
-          groundFar.visible = false;
           spawnGlow.visible = false;
           starPoints.visible = true;
           for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
@@ -2052,7 +2072,6 @@
           syncPlayerMesh();
           syncStarfieldMotion();
           ground.visible = true;
-          groundFar.visible = true;
           spawnGlow.visible = true;
           starPoints.visible = false;
           updateGroundScroll();
