@@ -1208,38 +1208,47 @@
     function toWorldX(x) { return (x - FIELD_W / 2) * GLOBAL_X_SCALE; }
     function toDepthZ(y) { return (y - FIELD_H) * DEPTH_SCALE; }
 
-    // ===== 地面（トロン風グリッドで奥行きの手がかりを出す） =====
-    function buildGridTexture() {
-      const size = 512;
+    // ===== 地面（黒い宇宙空間に白い星を散りばめる） =====
+    function buildStarfieldGroundTexture() {
+      const size = 1024;
       const cvs = document.createElement("canvas");
       cvs.width = size; cvs.height = size;
       const c = cvs.getContext("2d");
-      c.fillStyle = "#080b16";
+      c.fillStyle = "#000000";
       c.fillRect(0, 0, size, size);
-      const cell = size / 16;
-      c.strokeStyle = "rgba(90,140,220,0.55)";
-      c.lineWidth = 2;
-      for (let i = 0; i <= 16; i++) {
-        c.beginPath(); c.moveTo(i * cell, 0); c.lineTo(i * cell, size); c.stroke();
-        c.beginPath(); c.moveTo(0, i * cell); c.lineTo(size, i * cell); c.stroke();
+      const starCount = 700;
+      for (let i = 0; i < starCount; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const r = Math.random() * 1.6 + 0.3;
+        const a = Math.random() * 0.6 + 0.4;
+        c.fillStyle = `rgba(255,255,255,${a})`;
+        c.beginPath();
+        c.arc(x, y, r, 0, Math.PI * 2);
+        c.fill();
       }
       const tex = new THREE.CanvasTexture(cvs);
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
-      tex.repeat.set(14, 28);
+      tex.repeat.set(6, 12);
       tex.colorSpace = THREE.SRGBColorSpace;
       return tex;
     }
     const GROUND_W = 2600;
     const GROUND_D = 5200;
     const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
-    const groundMat = new THREE.MeshStandardMaterial({ map: buildGridTexture(), color: 0x9fb4dd, roughness: 1, metalness: 0 });
+    const groundMat = new THREE.MeshStandardMaterial({ map: buildStarfieldGroundTexture(), color: 0xffffff, roughness: 1, metalness: 0 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     // 「奥行き」はほぼ全て負のZ側で起きるので、地面もその範囲を覆うように奥へずらす
     ground.position.set(0, 0, -GROUND_D / 2 + 400);
     ground.receiveShadow = true;
     scene.add(ground);
+
+    // 宇宙空間を進んでいる感じを出すため、地面のテクスチャをゆっくりスクロールさせる
+    function updateGroundScroll() {
+      groundMat.map.offset.y -= 0.00025;
+    }
 
     // ===== 3Dスター背景 =====
     const starGeo = new THREE.BufferGeometry();
@@ -1750,6 +1759,7 @@
       syncStarfieldMotion();
 
       ground.visible = (clearPhase === 0);
+      updateGroundScroll();
       for (const bg of backgroundScrolls) {
         if (bg.mesh) bg.mesh.visible = bg.active && clearPhase === 0;
       }
@@ -1906,6 +1916,7 @@
           syncPlayerMesh();
           syncStarfieldMotion();
           ground.visible = true;
+          updateGroundScroll();
           renderer.render(scene, camera);
           drawTitleHud();
           if (pad0 && pad0.buttons) {
