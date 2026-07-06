@@ -1223,7 +1223,7 @@
         bgColor = "#000000",
         starCount = 700,
         repeatX = 6, repeatY = 12,
-        minR = 0.3, maxR = 1.6,
+        minR = 1.3, maxR = 6.8,
         minA = 0.4, maxA = 0.6
       } = opts;
       const size = 1024;
@@ -1270,7 +1270,7 @@
     // 遠層（さらに奥にある、より疎で暗い星）：不透明の黒背景で宇宙の地の色を担う
     const groundFarGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
     const groundFarMat = new THREE.MeshBasicMaterial({
-      map: buildStarfieldGroundTexture({ starCount: 320, repeatX: 4, repeatY: 8, minR: 0.5, maxR: 1.3, minA: 0.25, maxA: 0.45 }),
+      map: buildStarfieldGroundTexture({ starCount: 320, repeatX: 4, repeatY: 8, minR: 2.0, maxR: 5.5, minA: 0.25, maxA: 0.45 }),
       color: 0xffffff
     });
     const groundFar = new THREE.Mesh(groundFarGeo, groundFarMat);
@@ -1286,6 +1286,72 @@
     // 背景として使う（3D平面ではなくscene.backgroundとして設定）。
     const skyBgTex = buildStarfieldGroundTexture({ starCount: 700, repeatX: 3, repeatY: 3 });
     scene.background = skyBgTex;
+
+    // ===== 敵出現ラインの発光演出 =====
+    // 敵は常に同じ横線（y≈0、画面奥のほぼ固定の奥行き）から出現するため単調に見える。
+    // その出現ラインに沿って緑の細い線を左右に引き、その奥（さらに奥行きが深い側）に
+    // 緑青のモヤ（中央が厚く、左右端でフェードアウト）をかけ、手前側にはごく薄い
+    // 発光の余韻だけを残す＝異世界からワープして出現したような演出。ゲームロジック
+    // （出現座標・当たり判定）には一切影響しない、純粋な見た目だけの追加要素。
+    function buildSpawnLineGlowTexture() {
+      const W = 512, H = 256;
+      const cvs = document.createElement("canvas");
+      cvs.width = W; cvs.height = H;
+      const c = cvs.getContext("2d");
+      const img = c.createImageData(W, H);
+      const data = img.data;
+      const lineCenter = 0.62;   // v=0が手前(近)側、v=1が奥(遠)側。線の位置
+      const lineHalfWidth = 0.02;
+      for (let y = 0; y < H; y++) {
+        const vFrac = y / (H - 1);
+        const distFromLine = vFrac - lineCenter;
+        for (let x = 0; x < W; x++) {
+          const hFrac = x / (W - 1);
+          const edge = Math.max(0, 1 - Math.abs(hFrac - 0.5) * 2.15); // 中央=1、両端=0
+          let r = 40, g = 220, b = 180, a = 0;
+          if (Math.abs(distFromLine) < lineHalfWidth) {
+            // 出現ラインそのもの：端までまっすぐ伸びる細い緑の線
+            r = 60; g = 255; b = 160; a = 235;
+          } else if (distFromLine < 0) {
+            // このテクスチャ上でのv<lineCenter側は、実際の描画では手前(近)側になる：
+            // 宇宙空間に戻る、ごく薄い発光の余韻のみ
+            const d = (-distFromLine - lineHalfWidth) / (lineCenter - lineHalfWidth);
+            const falloff = Math.max(0, 1 - d);
+            const intensity = Math.pow(falloff, 3.0) * edge * 0.35;
+            a = Math.round(160 * intensity);
+          } else {
+            // v>lineCenter側は、実際の描画では奥側になる：
+            // サイバーパンク風の青緑混色モヤ。中央が厚く、線から離れるほど＆端に
+            // 近いほど薄くなる。線の近くは緑、離れるほど青寄りに色が混ざる。
+            const d = (distFromLine - lineHalfWidth) / (1 - lineCenter - lineHalfWidth);
+            const falloff = Math.max(0, 1 - d);
+            const intensity = Math.pow(falloff, 1.6) * edge;
+            const mix = Math.min(1, d * 2.2); // 0=線の近く(緑寄り)、1=遠く(青寄り)
+            r = Math.round(30 + 40 * mix);
+            g = Math.round(230 - 90 * mix);
+            b = Math.round(150 + 105 * mix);
+            a = Math.round(215 * intensity);
+          }
+          const idx = (y * W + x) * 4;
+          data[idx] = r; data[idx + 1] = g; data[idx + 2] = b; data[idx + 3] = a;
+        }
+      }
+      c.putImageData(img, 0, 0);
+      const tex = new THREE.CanvasTexture(cvs);
+      return tex;
+    }
+    const SPAWN_LINE_Z = toDepthZ(0);   // 敵が出現するy≈0に対応する奥行き
+    const SPAWN_GLOW_FAR_EXTENT = 500;  // ラインから奥側へのモヤの広がり
+    const SPAWN_GLOW_NEAR_EXTENT = 200; // ラインから手前側への余韻の広がり
+    const SPAWN_GLOW_DEPTH = SPAWN_GLOW_FAR_EXTENT + SPAWN_GLOW_NEAR_EXTENT;
+    const spawnGlowGeo = new THREE.PlaneGeometry(GROUND_W, SPAWN_GLOW_DEPTH, 1, 1);
+    const spawnGlowMat = new THREE.MeshBasicMaterial({
+      map: buildSpawnLineGlowTexture(), transparent: true, depthWrite: false
+    });
+    const spawnGlow = new THREE.Mesh(spawnGlowGeo, spawnGlowMat);
+    spawnGlow.rotation.x = -Math.PI / 2;
+    spawnGlow.position.set(0, 3, SPAWN_LINE_Z + (SPAWN_GLOW_NEAR_EXTENT - SPAWN_GLOW_FAR_EXTENT) / 2);
+    scene.add(spawnGlow);
 
     // 宇宙空間を進んでいる感じを出すため、地面のテクスチャをゆっくりスクロールさせる。
     // 近層のスクロール速度（ワールド座標換算）は空の星（Points）とも共有し、
@@ -1821,6 +1887,7 @@
 
       ground.visible = (clearPhase === 0);
       groundFar.visible = (clearPhase === 0);
+      spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
       updateGroundScroll();
       for (const bg of backgroundScrolls) {
@@ -1963,6 +2030,7 @@
           syncFinalBigExplosion();
           ground.visible = false;
           groundFar.visible = false;
+          spawnGlow.visible = false;
           starPoints.visible = false;
           for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
           renderer.render(scene, camera);
@@ -1973,6 +2041,7 @@
           syncStarfieldMotion();
           ground.visible = false;
           groundFar.visible = false;
+          spawnGlow.visible = false;
           starPoints.visible = true;
           for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
           renderer.render(scene, camera);
@@ -1984,6 +2053,7 @@
           syncStarfieldMotion();
           ground.visible = true;
           groundFar.visible = true;
+          spawnGlow.visible = true;
           starPoints.visible = false;
           updateGroundScroll();
           renderer.render(scene, camera);
