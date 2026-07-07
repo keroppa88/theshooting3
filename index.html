@@ -85,10 +85,10 @@
     const playerExplodeSound = new Audio("Game/player_explode.mp3");
     const starSound          = new Audio("Game/star.mp3");
 
-    shootSound.volume         = 0.2;
-    enemyExplodeSound.volume  = 0.2;
-    playerExplodeSound.volume = 0.2;
-    starSound.volume          = 0.3;
+    shootSound.volume         = 0.18;
+    enemyExplodeSound.volume  = 0.18;
+    playerExplodeSound.volume = 0.18;
+    starSound.volume          = 0.27;
 
     function playSound(sound) {
       const s = sound.cloneNode();
@@ -100,8 +100,19 @@
     // 3曲を順番にループ再生する。どの曲から始まるかはランダム。
     // APIの読み込みや再生に失敗してもゲーム本体には影響しない（無音で続行）。
     const BGM_VIDEO_IDS = ["SkypZuY6ZvA", "NOMa56y_Was", "G6tuvKE6_lA", "2fD9TBKHAdE"];
-    let bgmTrackIndex = (Math.random() * BGM_VIDEO_IDS.length) | 0; // 開始曲はランダム
-    const BGM_VOLUME = 20;     // 0〜100（旧mp3のvolume 0.2相当）
+    // 開始曲はページを開くたびに必ず変える：前回の開始曲をlocalStorageに記録して
+    // 次の曲から始める（記録が使えない環境ではランダムにフォールバック）
+    let bgmTrackIndex;
+    try {
+      const prev = parseInt(localStorage.getItem("bgmStartIndex"), 10);
+      bgmTrackIndex = (Number.isInteger(prev)
+        ? (prev + 1) % BGM_VIDEO_IDS.length
+        : (Math.random() * BGM_VIDEO_IDS.length) | 0);
+      localStorage.setItem("bgmStartIndex", String(bgmTrackIndex));
+    } catch (e) {
+      bgmTrackIndex = (Math.random() * BGM_VIDEO_IDS.length) | 0;
+    }
+    const BGM_VOLUME = 22;     // 0〜100
     let bgmUnlocked = false;   // ユーザー操作があったか（ブラウザの自動再生制限対策）
     let bgmPlaying  = false;   // 再生を開始したか（以後は曲送りで無限ループ）
     let bgmWantPlay = false;   // ゲーム側から再生要求が出ているか
@@ -1355,14 +1366,16 @@
     }
 
     // ===== サイバーパンク配色（グリッド線・出現ライン・空の気分色が時間経過で変化） =====
-    // 線の色と空の色は必ず違う色になるよう、パレット上で半周分ずらして選ぶ。
+    // 線の色と空の色は必ず違う色になるよう、パレット上で2つずらして選ぶ。
+    // 開始時：線＝青白、空の明るい部分＝#40e0d0（ターコイズ）
     const CYBER_PALETTE = [
       { r: 140, g: 210, b: 255 }, // 青白
       { r: 60,  g: 255, b: 140 }, // 緑
-      { r: 190, g: 255, b: 60  }, // 黄緑
+      { r: 64,  g: 224, b: 208 }, // ターコイズ #40e0d0
       { r: 255, g: 225, b: 60  }, // 黄色
       { r: 255, g: 70,  b: 60  }, // 赤
     ];
+    const SKY_COLOR_OFFSET = 2;   // 空の色は線の色からパレット2つ先
     function paletteColorAt(phase) {
       const n = CYBER_PALETTE.length;
       const t = ((phase % n) + n) % n;
@@ -1396,7 +1409,7 @@
     function updateCyberColors() {
       const phase = currentColorPhase();
       const lineColor = paletteColorAt(phase);
-      const skyColor = paletteColorAt(phase + CYBER_PALETTE.length / 2);
+      const skyColor = paletteColorAt(phase + SKY_COLOR_OFFSET);
       groundMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       paintSkyGradient(skyColor);
@@ -1460,7 +1473,7 @@
     // このスクロール速度（ワールド座標換算）はクルーズ演出の空の星（Points）とも共有する。
     // offset.y を+方向に進めると、テクスチャ上の線は「奥（v=1側）→手前（v=0側）」に
     // 流れて見え、手前まで来たら奥へ戻って繰り返す＝奥から手前へ流れる前進感になる。
-    const GROUND_SCROLL_UV_SPEED = 0.00025;
+    const GROUND_SCROLL_UV_SPEED = 0.00075;
     let spaceScrollZ = 0;
     function updateGroundScroll() {
       groundMat.map.offset.y += GROUND_SCROLL_UV_SPEED;
@@ -1686,6 +1699,25 @@
       }
       return new THREE.Mesh(enemyShipGeo, enemyShipMat);
     }
+
+    // MagicaVoxelで作った自機モデル。読み込み完了後、青い仮の箱から差し替える。
+    // 見た目サイズは実際の当たり判定（player.w×player.h）に合わせる。
+    voxLoader.load("Game/vox/jiki.vox", (chunks) => {
+      if (!chunks || !chunks.length) return;
+      const chunk = chunks[0];
+      const vmesh = new VOXMesh(chunk);
+      vmesh.material.roughness = 0.5;
+      vmesh.material.metalness = 0.15;
+      playerMesh.geometry = vmesh.geometry;
+      playerMesh.material = vmesh.material;
+      playerMesh.scale.set(
+        player.w / chunk.size.x,
+        player.w / chunk.size.x,
+        player.h / chunk.size.y
+      );
+      // 敵と逆向き（画面奥＝進行方向）を向かせる
+      playerMesh.rotation.y = Math.PI;
+    });
 
     // 自機弾・敵弾
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
