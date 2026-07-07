@@ -20,12 +20,11 @@
 * ゲームオーバー画面からのリスタートにコントローラーのボタン使用可。
 
 <img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/63a564ba-cee1-4ad9-9254-3e5585785576" />
-<img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/bc10bd11-5092-4f47-816c-3f6a81cdf025" />
+<img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/1e56a007-4a35-4b9c-83de-55c7121bbcda" />
 
 ----------------------------------------------------
 
 <img width="300" height="200" alt="image" src="https://github.com/user-attachments/assets/5704c5ee-0f6b-40a2-8af0-52853df2f58c" />
-<img width="743" height="614" alt="image" src="https://github.com/user-attachments/assets/1e56a007-4a35-4b9c-83de-55c7121bbcda" />
 <img width="300" height="200" alt="image" src="https://github.com/user-attachments/assets/c7817d7f-8484-48cd-8907-4eae24f42f59" />
 <img width="300" height="200" alt="image" src="https://github.com/user-attachments/assets/09924226-4fd8-471a-a86c-75fbc5bc96a8" />
 <img width="300" height="200" alt="image" src="https://github.com/user-attachments/assets/32f82b1e-ab19-4022-93ca-035f627ebc26" />
