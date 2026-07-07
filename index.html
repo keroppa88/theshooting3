@@ -1348,8 +1348,11 @@
     const COLOR_HOLD_SEC = 30;
     const COLOR_TRANSITION_SEC = 15;
     const COLOR_CYCLE_SEC = COLOR_HOLD_SEC + COLOR_TRANSITION_SEC;
+    // フレーム数基準だと高リフレッシュレートの画面（120Hz等）でサイクルが
+    // 速く回ってしまうため、実時間（壁時計）基準で進める。
+    const colorEpochMs = performance.now();
     function currentColorPhase() {
-      const t = frameCount / 60;
+      const t = (performance.now() - colorEpochMs) / 1000;
       const cycleIndex = Math.floor(t / COLOR_CYCLE_SEC);
       const posInCycle = t - cycleIndex * COLOR_CYCLE_SEC;
       const localPhase = posInCycle < COLOR_HOLD_SEC
@@ -1655,7 +1658,8 @@
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
     const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
     const playerBulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x554400, roughness: 0.3 });
-    const enemyBulletGeo = new THREE.BoxGeometry(4, 14, 10);
+    // 敵弾も自機弾同様、縦（高さ・進行方向の長さ）は当たり判定の半分の見た目
+    const enemyBulletGeo = new THREE.BoxGeometry(4, 7, 5);
     const enemyBulletMat = new THREE.MeshStandardMaterial({ color: 0xff5555, emissive: 0x550000, roughness: 0.3 });
 
     // パワーアップ★（3方向ショット／2連ショット）
