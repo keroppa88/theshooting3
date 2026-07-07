@@ -1700,6 +1700,25 @@
       return new THREE.Mesh(enemyShipGeo, enemyShipMat);
     }
 
+    // MagicaVoxelで作った自機モデル。読み込み完了後、青い仮の箱から差し替える。
+    // 見た目サイズは実際の当たり判定（player.w×player.h）に合わせる。
+    voxLoader.load("Game/vox/jiki.vox", (chunks) => {
+      if (!chunks || !chunks.length) return;
+      const chunk = chunks[0];
+      const vmesh = new VOXMesh(chunk);
+      vmesh.material.roughness = 0.5;
+      vmesh.material.metalness = 0.15;
+      playerMesh.geometry = vmesh.geometry;
+      playerMesh.material = vmesh.material;
+      playerMesh.scale.set(
+        player.w / chunk.size.x,
+        player.w / chunk.size.x,
+        player.h / chunk.size.y
+      );
+      // 敵と逆向き（画面奥＝進行方向）を向かせる
+      playerMesh.rotation.y = Math.PI;
+    });
+
     // 自機弾・敵弾
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
     const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
