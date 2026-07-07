@@ -1242,38 +1242,75 @@
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(repeatX, repeatY);
+      // 奥（浅い角度）で線がぼやけて潰れないように異方性フィルタを最大にする
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      // sRGB指定がないと中間調が明るく持ち上がり、線の縁が太くぼやけて見える
+      tex.colorSpace = THREE.SRGBColorSpace;
       return tex;
     }
-    // 地面幅は奥行き最遠端でも画面幅を確実に覆うくらい広く取る。狭いと地面の左右の
+    // ===== 構成の原則 =====
+    // 「黒背景の格子柄の地上」があり、その地面は敵出現ライン（toDepthZ(0)）で
+    // 物理的に終わる。地面の遠端＝地平線＝敵出現ラインが構造的に必ず一致する。
+    // それより上（奥）はすべて空（スクリーン背景のグラデーション）。
+    const SPAWN_LINE_Z = toDepthZ(0);  // 敵が出現するy=0に対応する奥行き＝地平線
+    const GROUND_NEAR_Z = 400;         // 地面の手前端（カメラより手前まで）
+    // 地面幅は地平線の距離でも画面幅を確実に覆うくらい広く取る。狭いと地面の左右の
     // 端（側辺）が遠近法で収束して見え、地平線が三角形に「割れて」見えてしまう。
     const GROUND_W = 9100;
-    const GROUND_D = 5200;
+    const GROUND_D = GROUND_NEAR_Z - SPAWN_LINE_Z;
     const GROUND_REPEAT_X = 14;
-    const GROUND_REPEAT_Y = 8;
+    // 格子のマスが正方形になるよう、奥行き方向の繰り返し数は幅のマスサイズから算出
+    const GROUND_REPEAT_Y = GROUND_D / (GROUND_W / GROUND_REPEAT_X);
     const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_D, 1, 1);
     const groundMat = new THREE.MeshBasicMaterial({
       map: buildGridLineTexture({ repeatX: GROUND_REPEAT_X, repeatY: GROUND_REPEAT_Y }),
-      color: 0xffffff
+      color: 0xffffff,
+      // フォグをかけると遠端（＝地平線＝敵出現ライン）付近の格子が黒く潰れて
+      // 「見えている地平線」が実際の地面の端より手前に来てしまう。
+      // 格子は遠端までくっきり見せたいのでフォグの影響を受けない。
+      fog: false
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    // 「奥行き」はほぼ全て負のZ側で起きるので、地面もその範囲を覆うように奥へずらす
-    ground.position.set(0, 0, -GROUND_D / 2 + 400);
+    // 手前端GROUND_NEAR_Z〜遠端SPAWN_LINE_Z（＝敵出現ライン）を正確に覆う位置に置く
+    ground.position.set(0, 0, (GROUND_NEAR_Z + SPAWN_LINE_Z) / 2);
     scene.add(ground);
 
-    // 地平線より上の空間：黒（地平線側）からサイバーパンクな気分色（上空側）への
-    // グラデーション。気分色は時間経過・スコアに応じて変化する（updateCyberColorsが
+    // 地面の遠端（＝地平線＝敵出現ライン）が画面のどの高さに映るかを求めておく。
+    // 空側の演出（モヤ・グラデーション）はこの高さを基準に描く。
+    // （初回レンダリング前なのでカメラ行列を明示的に更新してから投影する）
+    camera.updateMatrixWorld();
+    const horizonProbe = new THREE.Vector3(0, 0, SPAWN_LINE_Z);
+    horizonProbe.project(camera);
+    const HORIZON_FRACTION_FROM_BOTTOM = horizonProbe.y * 0.5 + 0.5;
+
+    // 地平線より上の空間＝空。下（地平線ぎわ）は黒く、上へ行くほど気分色が
+    // ついて明るくなるグラデーション。地平線のすぐ上には地平線ラインと同色の
+    // モヤを少しだけ置く。気分色は時間経過で変化する（updateCyberColorsが
     // 毎フレーム再描画する。scene.backgroundとして使うスクリーン空間の背景）。
     const skyGradientCanvas = document.createElement("canvas");
     skyGradientCanvas.width = 2;
     skyGradientCanvas.height = 512;
     const skyGradientTex = new THREE.CanvasTexture(skyGradientCanvas);
+    // sRGB指定がないとグラデーションが明るく持ち上がり、地平線ぎわの黒が
+    // 灰色〜くすんだ色に化けて「黒から色へ」のグラデーションが感じられなくなる
+    skyGradientTex.colorSpace = THREE.SRGBColorSpace;
     scene.background = skyGradientTex;
+    // 空は「地平線＝黒、上へ行くほど色がつき明るくなる」を画面の空全体を使って
+    // ゆるやかに描く（急な変化はベタ塗りに見えてグラデーションが感じられない）。
+    // 地平線ぎわのモヤは空ではなく、地平線上に立てた縦板（spawnGlow）が担当する。
     function paintSkyGradient(topColor) {
       const c = skyGradientCanvas.getContext("2d");
       const h = skyGradientCanvas.height;
       const grad = c.createLinearGradient(0, h, 0, 0);
+      const hf = Math.min(0.9, Math.max(0.02, HORIZON_FRACTION_FROM_BOTTOM));
+      const mid = hf + (1 - hf) * 0.5;
       grad.addColorStop(0, "#000000");
+      // 地平線の高さでは黒
+      grad.addColorStop(hf, "#000000");
+      // 空の中腹でもまだ暗め（色がつき始めたと分かる程度）
+      grad.addColorStop(mid, `rgb(${topColor.r * 0.30 | 0},${topColor.g * 0.30 | 0},${topColor.b * 0.30 | 0})`);
+      // 画面上端で最も明るい気分色
       grad.addColorStop(1, `rgb(${topColor.r},${topColor.g},${topColor.b})`);
       c.fillStyle = grad;
       c.fillRect(0, 0, skyGradientCanvas.width, h);
@@ -1302,10 +1339,19 @@
         b: Math.round(c0.b + (c1.b - c0.b) * f),
       };
     }
+    // 30秒ごとに次の色へ切り替わり始め、15秒かけてゆっくり移り変わる
+    // （30秒static＋15秒遷移＝45秒周期でパレットを1つ進める）
+    const COLOR_HOLD_SEC = 30;
+    const COLOR_TRANSITION_SEC = 15;
+    const COLOR_CYCLE_SEC = COLOR_HOLD_SEC + COLOR_TRANSITION_SEC;
     function currentColorPhase() {
-      // 時間経過でゆっくり連続的に巡回しつつ、スコア（プレイ内容）でも位相をずらす
       const t = frameCount / 60;
-      return t * 0.025 + (score % 100) * 0.031;
+      const cycleIndex = Math.floor(t / COLOR_CYCLE_SEC);
+      const posInCycle = t - cycleIndex * COLOR_CYCLE_SEC;
+      const localPhase = posInCycle < COLOR_HOLD_SEC
+        ? 0
+        : (posInCycle - COLOR_HOLD_SEC) / COLOR_TRANSITION_SEC;
+      return cycleIndex + localPhase;
     }
     function updateCyberColors() {
       const phase = currentColorPhase();
@@ -1318,66 +1364,64 @@
 
     // ===== 敵出現ライン（地平線）の発光演出 =====
     // 敵は常に同じ横線（y≈0、画面奥のほぼ固定の奥行き）から出現するため単調に見える。
-    // その出現ライン＝地平線に沿って細い線を左右に引き、その奥（さらに奥行きが深い側）に
-    // サイバーパンク風のモヤ（中央が厚く、左右端でフェードアウト）をかけ、手前側には
-    // ごく薄い発光の余韻だけを残す＝異世界からワープして出現したような演出。
+    // 地平線＝敵出現ラインの位置に、カメラの方を向いた「縦の板」を立てて描く。
+    // （水平の板だと真横から見ることになり、モヤがほぼ画面に映らない）
+    // 内容：地面の高さに視認性の高い明るい横一直線。その下は幅の狭いモヤ、
+    // 上はやや幅広で「モヤがある」とすぐ分かる濃さのモヤ。
     // 色は白のみで焼き込み、実際の色相はマテリアルのcolor（updateCyberColorsが毎フレーム
-    // 更新）で決める＝グリッド線と同じ色に時間経過で変化する。ゲームロジック
+    // 更新）で決める＝格子の線と同じ色に時間経過で変化する。ゲームロジック
     // （出現座標・当たり判定）には一切影響しない、純粋な見た目だけの追加要素。
+    const SPAWN_GLOW_BELOW = 30;   // 板の下端：線より下（地面側）のモヤは幅狭く
+    const SPAWN_GLOW_ABOVE = 150;  // 板の上端：線より上（空側）のモヤはやや幅広
+    const SPAWN_GLOW_H = SPAWN_GLOW_BELOW + SPAWN_GLOW_ABOVE;
+    const SPAWN_LINE_THICKNESS = 5;  // 横一直線の太さ（ワールド単位）
     function buildSpawnLineGlowTexture() {
-      const W = 512, H = 256;
+      const W = 4, H = 512;  // 横方向は一様なので幅は最小限、縦方向を高解像度に
       const cvs = document.createElement("canvas");
       cvs.width = W; cvs.height = H;
       const c = cvs.getContext("2d");
       const img = c.createImageData(W, H);
       const data = img.data;
-      const lineCenter = 0.62;   // v=0が手前(近)側、v=1が奥(遠)側。線の位置
-      const lineHalfWidth = 0.02;
       for (let y = 0; y < H; y++) {
-        const vFrac = y / (H - 1);
-        const distFromLine = vFrac - lineCenter;
+        // canvasの上端(y=0)がテクスチャ上端(v=1)＝板の上端
+        const v = 1 - y / (H - 1);
+        const worldY = v * SPAWN_GLOW_H - SPAWN_GLOW_BELOW; // 板ローカルの高さ（0＝地面）
+        let a = 0;
+        if (worldY >= 0 && worldY <= SPAWN_LINE_THICKNESS) {
+          // 地平線ライン：くっきり明るい横一直線
+          a = 255;
+        } else if (worldY < 0) {
+          // 線の下：かなり幅狭いモヤ
+          const d = -worldY;
+          a = Math.round(140 * Math.max(0, 1 - d / 16));
+        } else {
+          // 線の上：やや幅広で、はっきり分かるモヤ
+          const d = worldY - SPAWN_LINE_THICKNESS;
+          a = Math.round(150 * Math.pow(Math.max(0, 1 - d / 120), 1.6));
+        }
         for (let x = 0; x < W; x++) {
-          const hFrac = x / (W - 1);
-          const edge = Math.max(0, 1 - Math.abs(hFrac - 0.5) * 2.15); // 中央=1、両端=0
-          let a = 0;
-          if (Math.abs(distFromLine) < lineHalfWidth) {
-            // 出現ラインそのもの：端までまっすぐ伸びる細い線
-            a = 235;
-          } else if (distFromLine < 0) {
-            // このテクスチャ上でのv<lineCenter側は、実際の描画では手前(近)側になる：
-            // 宇宙空間に戻る、ごく薄い発光の余韻のみ
-            const d = (-distFromLine - lineHalfWidth) / (lineCenter - lineHalfWidth);
-            const falloff = Math.max(0, 1 - d);
-            const intensity = Math.pow(falloff, 3.0) * edge * 0.35;
-            a = Math.round(160 * intensity);
-          } else {
-            // v>lineCenter側は、実際の描画では奥側になる：
-            // モヤ。中央が厚く、線から離れるほど＆端に近いほど薄くなる
-            const d = (distFromLine - lineHalfWidth) / (1 - lineCenter - lineHalfWidth);
-            const falloff = Math.max(0, 1 - d);
-            const intensity = Math.pow(falloff, 1.6) * edge;
-            a = Math.round(215 * intensity);
-          }
           const idx = (y * W + x) * 4;
           data[idx] = 255; data[idx + 1] = 255; data[idx + 2] = 255; data[idx + 3] = a;
         }
       }
       c.putImageData(img, 0, 0);
       const tex = new THREE.CanvasTexture(cvs);
+      tex.colorSpace = THREE.SRGBColorSpace;
       return tex;
     }
-    const SPAWN_LINE_Z = toDepthZ(0);   // 敵が出現するy≈0に対応する奥行き
-    const SPAWN_GLOW_FAR_EXTENT = 900;  // ラインから奥側へのモヤの広がり
-    const SPAWN_GLOW_NEAR_EXTENT = 300; // ラインから手前側への余韻の広がり
-    const SPAWN_GLOW_DEPTH = SPAWN_GLOW_FAR_EXTENT + SPAWN_GLOW_NEAR_EXTENT;
-    // 地面と同じ幅（画面幅を確実に覆う広さ）にして、左右一直線のラインにする
-    const spawnGlowGeo = new THREE.PlaneGeometry(GROUND_W, SPAWN_GLOW_DEPTH, 1, 1);
+    // SPAWN_LINE_Z（＝地面の遠端＝地平線）は地面セクションで定義済み。
+    // 縦板をその奥行きに立てるので、構造的に敵出現位置と必ず一致する。
+    // 地面と同じ幅（画面幅を確実に覆う広さ）にして、左右一直線のラインにする。
+    const spawnGlowGeo = new THREE.PlaneGeometry(GROUND_W, SPAWN_GLOW_H, 1, 1);
     const spawnGlowMat = new THREE.MeshBasicMaterial({
-      map: buildSpawnLineGlowTexture(), transparent: true, depthWrite: false
+      map: buildSpawnLineGlowTexture(), transparent: true, depthWrite: false,
+      // この距離でフォグに暗くされると線の視認性が下がるのでフォグは受けない
+      fog: false
     });
     const spawnGlow = new THREE.Mesh(spawnGlowGeo, spawnGlowMat);
-    spawnGlow.rotation.x = -Math.PI / 2;
-    spawnGlow.position.set(0, 3, SPAWN_LINE_Z + (SPAWN_GLOW_NEAR_EXTENT - SPAWN_GLOW_FAR_EXTENT) / 2);
+    // 回転なし＝+Z（カメラ側）を向いた縦板。板ローカルの高さ0（線の位置）が
+    // ワールドの地面（y=0）に来るよう中心を合わせる。
+    spawnGlow.position.set(0, (SPAWN_GLOW_ABOVE - SPAWN_GLOW_BELOW) / 2, SPAWN_LINE_Z);
     scene.add(spawnGlow);
 
     // 前進している感じを出すため、地面のグリッドをゆっくりスクロールさせる。
