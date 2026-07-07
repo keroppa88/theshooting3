@@ -200,11 +200,56 @@
     const starSpawned    = {};
     const doubleShotStarSpawned = {};
 
+    // ===== 超初心者モード（コナミコマンド：上上下下左右左右BA） =====
+    // 発動すると通常敵・中ボスが弾を撃たなくなり、壁（硬い横長ブロック）も出なくなる。
+    // ラスボスだけは通常通り三方向弾を撃つ。ページを再読み込みするまで有効。
+    let superBeginnerMode = false;
+    let consecutiveGameOvers = 0; // クリアでリセット。2以上でゲームオーバー画面にコマンドのヒントを出す
+    const KONAMI_SEQ = ["U", "U", "D", "D", "L", "R", "L", "R", "B", "A"];
+    let konamiProgress = 0;
+    function feedKonami(sym) {
+      if (sym === KONAMI_SEQ[konamiProgress]) {
+        konamiProgress++;
+        if (konamiProgress >= KONAMI_SEQ.length) {
+          konamiProgress = 0;
+          superBeginnerMode = true;
+        }
+      } else {
+        // 途中で崩れたら最初から。ただし入力が先頭記号（上）なら進行1として仕切り直す
+        konamiProgress = (sym === KONAMI_SEQ[0]) ? 1 : 0;
+      }
+    }
+    const KONAMI_KEY_SYMBOLS = {
+      ArrowUp: "U", ArrowDown: "D", ArrowLeft: "L", ArrowRight: "R",
+      KeyB: "B", KeyA: "A"
+    };
+    // ゲームパッド用：十字キー12/13/14/15、B=ボタン1、A=ボタン0 の押した瞬間だけ拾う
+    const KONAMI_PAD_BUTTONS = [
+      { idx: 12, sym: "U" }, { idx: 13, sym: "D" },
+      { idx: 14, sym: "L" }, { idx: 15, sym: "R" },
+      { idx: 1,  sym: "B" }, { idx: 0,  sym: "A" }
+    ];
+    let prevKonamiPadPressed = {};
+    function pollKonamiGamepad(gp) {
+      if (!gp || !gp.buttons) { prevKonamiPadPressed = {}; return; }
+      for (const { idx, sym } of KONAMI_PAD_BUTTONS) {
+        const pressed = !!(gp.buttons[idx] && gp.buttons[idx].pressed);
+        if (pressed && !prevKonamiPadPressed[idx]) feedKonami(sym);
+        prevKonamiPadPressed[idx] = pressed;
+      }
+    }
+
     // 入力
     const keys = {};
     document.addEventListener("keydown", e => {
       keys[e.code] = true;
       unlockBgm();
+
+      // コナミコマンド入力（ゲーム中・ゲームオーバー画面のどちらでも受け付ける。
+      // キー押しっぱなしのリピートは同じ記号が連続してしまうため無視する）
+      if (gameStarted && !e.repeat && KONAMI_KEY_SYMBOLS[e.code]) {
+        feedKonami(KONAMI_KEY_SYMBOLS[e.code]);
+      }
 
       if (!gameStarted && clearPhase === 0 && !gameCleared) {
         startGame();
@@ -327,7 +372,8 @@
       const speed = 2 + Math.random() * 2;
 
       const shooterRatio = getShooterRatio(score);
-      const canShoot = (shooterRatio > 0) && (Math.random() < shooterRatio);
+      // 超初心者モード中は弾を撃つ敵そのものを出さない
+      const canShoot = !superBeginnerMode && (shooterRatio > 0) && (Math.random() < shooterRatio);
       const isDoublePattern = (score > 1300);
 
       const e = {
@@ -492,8 +538,10 @@
     }
 
     function spawnFinalBoss() {
-      const h = FIELD_H / 3;
-      const w = h; // MagicaVoxelモデル差し替え前提の仮の正方形プレースホルダー
+      // 遠く（画面奥）にいて小さく見えるため、従来（FIELD_H/3）の2倍の大きさにする。
+      // 当たり判定もこのw/hがそのまま使われるので、見た目と一緒に2倍になる。
+      const h = (FIELD_H / 3) * 2;
+      const w = h;
       const x = (FIELD_W - w) / 2;
       const y = FIELD_H * 0.05;
       const speed = 2;
@@ -742,6 +790,7 @@
           continue;
         }
         if (rectHit({x: player.x, y: player.y, w: player.w, h: player.h}, b)) {
+          if (!gameOver) consecutiveGameOvers++;
           gameOver = true;
           playSound(playerExplodeSound);
           createExplosion(player.x + player.w/2, player.y + player.h/2, false);
@@ -759,7 +808,8 @@
           enemySpawnTimer = 40;
         }
 
-        if (score > 500 && score < 1650) {
+        // 超初心者モード中は壁（横長の硬いブロック）を出さない
+        if (!superBeginnerMode && score > 500 && score < 1650) {
           hardTwinSpawnTimer--;
           if (hardTwinSpawnTimer <= 0) {
             spawnHardTwin();
@@ -799,7 +849,9 @@
 
           e.shotTimer--;
           if (e.shotTimer <= 0) {
-            enemyBullets.push({ x: e.x + e.w/2 - 2, y: e.y + e.h, w: 4, h: 10, vx: 0, vy: 5 });
+            if (!superBeginnerMode) {
+              enemyBullets.push({ x: e.x + e.w/2 - 2, y: e.y + e.h, w: 4, h: 10, vx: 0, vy: 5 });
+            }
             e.shotTimer = 120;
           }
 
@@ -819,13 +871,15 @@
 
           e.shotTimer--;
           if (e.shotTimer <= 0) {
-            const speed = 5;
-            const ang = Math.PI / 6;
-            const cx = e.x + e.w/2 - 2;
-            const cy = e.y + e.h/2;
+            if (!superBeginnerMode) {
+              const speed = 5;
+              const ang = Math.PI / 6;
+              const cx = e.x + e.w/2 - 2;
+              const cy = e.y + e.h/2;
 
-            enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx: -Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
-            enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx:  Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
+              enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx: -Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
+              enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx:  Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
+            }
             e.shotTimer = 120;
           }
 
@@ -897,10 +951,12 @@
             if (typeof e.shotTimer !== "number") e.shotTimer = 180;
             e.shotTimer--;
             if (e.shotTimer <= 0) {
-              const speed = 6;
-              const y0 = e.y + e.h;
-              enemyBullets.push({ x: e.x + e.w * 0.35, y: y0, w: 4, h: 10, vx: 0, vy: speed });
-              enemyBullets.push({ x: e.x + e.w * 0.65, y: y0, w: 4, h: 10, vx: 0, vy: speed });
+              if (!superBeginnerMode) {
+                const speed = 6;
+                const y0 = e.y + e.h;
+                enemyBullets.push({ x: e.x + e.w * 0.35, y: y0, w: 4, h: 10, vx: 0, vy: speed });
+                enemyBullets.push({ x: e.x + e.w * 0.65, y: y0, w: 4, h: 10, vx: 0, vy: speed });
+              }
               e.shotTimer = 180;
             }
           }
@@ -908,13 +964,14 @@
           if (e.isShooter && !e.isBoss && e.shotsLeft > 0) {
             e.shotTimer--;
             if (e.shotTimer <= 0) {
-              fireEnemyBulletsFromEnemy(e);
+              if (!superBeginnerMode) fireEnemyBulletsFromEnemy(e);
               e.shotsLeft = 0;
             }
           }
         }
 
         if (rectHit(player, e)) {
+          if (!gameOver) consecutiveGameOvers++;
           gameOver = true;
           playSound(playerExplodeSound);
           createExplosion(player.x + player.w/2, player.y + player.h/2, false);
@@ -1409,6 +1466,27 @@
       groundMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       paintSkyGradient(skyColor);
+      updateEnemyBulletColor(lineColor);
+    }
+
+    // 敵弾の色＝格子線の逆色（補色）を明るく補正した色。
+    // 逆色そのままだと暗い色になる局面があるため、最大成分が255になるよう正規化した上で
+    // さらに白へ30%寄せ、どの配色サイクルでも「絶対に明るい色」を保証する。
+    // 逆色がほぼ黒（＝線がほぼ白）の場合は白にフォールバックする。
+    function updateEnemyBulletColor(lineColor) {
+      const inv = { r: 255 - lineColor.r, g: 255 - lineColor.g, b: 255 - lineColor.b };
+      const maxC = Math.max(inv.r, inv.g, inv.b);
+      let r, g, b;
+      if (maxC < 60) {
+        r = g = b = 255;
+      } else {
+        const k = 255 / maxC;
+        const W = 0.3; // 白寄せの割合
+        r = inv.r * k * (1 - W) + 255 * W;
+        g = inv.g * k * (1 - W) + 255 * W;
+        b = inv.b * k * (1 - W) + 255 * W;
+      }
+      enemyBulletMat.color.setRGB(r / 255, g / 255, b / 255);
     }
 
     // ===== 敵出現ライン（地平線）の発光演出 =====
@@ -1590,7 +1668,15 @@
       enemyShipVoxScale = { x: 30 / chunk.size.x, y: 30 / chunk.size.x, z: 30 / chunk.size.y };
     });
 
-    function createEnemyShipMesh() {
+    function createEnemyShipMesh(entity) {
+      // 弾を撃つ通常敵は専用モデル（teki2.vox）。ファイル未配置・読み込み前はteki.voxと同じ見た目
+      if (entity && entity.isShooter && shooterVox) {
+        const m = new THREE.Mesh(shooterVox.geo, shooterVox.mat);
+        const s = 30 / shooterVox.w; // 当たり判定30×30に見た目を合わせる
+        m.scale.set(s, s, 30 / shooterVox.d);
+        m.castShadow = true;
+        return m;
+      }
       if (enemyShipVoxGeo) {
         const m = new THREE.Mesh(enemyShipVoxGeo, enemyShipVoxMat);
         m.scale.set(enemyShipVoxScale.x, enemyShipVoxScale.y, enemyShipVoxScale.z);
@@ -1600,65 +1686,99 @@
       return new THREE.Mesh(enemyShipGeo, enemyShipMat);
     }
 
-    // 汎用：MagicaVoxelモデルを読み込み、ジオメトリ・マテリアルと
-    // 実際に詰まっているボクセル範囲（バウンディングボックス）の実寸を保持する。
-    // グリッド全体のサイズではなく実寸で割ることで、狙った表示サイズに正確に合う。
-    function loadVoxTemplate(url, done) {
-      voxLoader.load(url, (chunks) => {
-        if (!chunks || !chunks.length) return;
-        const vmesh = new VOXMesh(chunks[0]);
-        vmesh.material.roughness = 0.5;
-        vmesh.material.metalness = 0.15;
-        vmesh.geometry.computeBoundingBox();
-        const bb = vmesh.geometry.boundingBox;
-        done({
-          geo: vmesh.geometry,
-          mat: vmesh.material,
-          w: Math.max(1e-6, bb.max.x - bb.min.x),
-          d: Math.max(1e-6, bb.max.z - bb.min.z)
-        });
-      });
-    }
-
-    // 自機モデル。読み込み完了後、青い仮の箱から差し替える。
-    loadVoxTemplate("Game/vox/jiki.vox", (t) => {
-      playerMesh.geometry = t.geo;
-      playerMesh.material = t.mat;
+    // MagicaVoxelで作った自機モデル。読み込み完了後、青い仮の箱から差し替える。
+    // グリッド全体ではなく実際に詰まっているボクセルの範囲（バウンディングボックス）を
+    // 測ってスケールすることで、以前の立方体（当たり判定30×30）と同じ大きさに合わせる。
+    voxLoader.load("Game/vox/jiki.vox", (chunks) => {
+      if (!chunks || !chunks.length) return;
+      const chunk = chunks[0];
+      const vmesh = new VOXMesh(chunk);
+      vmesh.material.roughness = 0.5;
+      vmesh.material.metalness = 0.15;
+      vmesh.geometry.computeBoundingBox();
+      const bb = vmesh.geometry.boundingBox;
+      const modelW = Math.max(1e-6, bb.max.x - bb.min.x); // 実際の機体の幅
+      const modelD = Math.max(1e-6, bb.max.z - bb.min.z); // 実際の機体の奥行き
+      playerMesh.geometry = vmesh.geometry;
+      playerMesh.material = vmesh.material;
       // 薄い機体シルエットは同じ幅でも立方体より小さく見えるため、見た目だけ2倍にする
       // （当たり判定は従来通り30×30のまま＝見た目より当たりに寛容）
       const PLAYER_VISUAL_SCALE = 2;
       playerMesh.scale.set(
-        PLAYER_VISUAL_SCALE * player.w / t.w,
-        PLAYER_VISUAL_SCALE * player.w / t.w,
-        PLAYER_VISUAL_SCALE * player.h / t.d
+        PLAYER_VISUAL_SCALE * player.w / modelW,
+        PLAYER_VISUAL_SCALE * player.w / modelW,
+        PLAYER_VISUAL_SCALE * player.h / modelD
       );
       // 敵と逆向き（画面奥＝進行方向）を向かせる
       playerMesh.rotation.y = Math.PI;
     });
 
-    // 中ボス・大ボス・ミサイルのモデル。読み込み完了後にスポーンする個体から反映される
-    // （読み込み前は従来のプレースホルダーを使う）。
-    let midBossVox = null, finalBossVox = null, missileVox = null;
-    loadVoxTemplate("Game/vox/boss0.vox",   (t) => { midBossVox = t; });
-    loadVoxTemplate("Game/vox/boss01.vox",  (t) => { finalBossVox = t; });
-    loadVoxTemplate("Game/vox/missile.vox", (t) => { missileVox = t; });
-
-    // voxテンプレートから、当たり判定サイズ（w×h）に見た目を合わせたメッシュを作る
-    function createVoxMeshFor(t, w, h) {
-      const m = new THREE.Mesh(t.geo, t.mat);
-      m.scale.set(w / t.w, w / t.w, h / t.d);
-      m.castShadow = true;
-      m.userData.isVoxModel = true;
-      return m;
+    // ===== MagicaVoxelモデル（中ボス・大ボス・ミサイル・パワーアップ星） =====
+    // teki.vox / jiki.vox と同じ方式：読み込み完了後に生成されるメッシュから反映され、
+    // 読み込み前は従来のプレースホルダー（箱・星形ジオメトリ）を使う。
+    function loadVoxModel(url, onLoaded) {
+      voxLoader.load(url, (chunks) => {
+        if (!chunks || !chunks.length) return;
+        const chunk = chunks[0];
+        const vmesh = new VOXMesh(chunk);
+        vmesh.material.roughness = 0.5;
+        vmesh.material.metalness = 0.15;
+        vmesh.geometry.computeBoundingBox();
+        const bb = vmesh.geometry.boundingBox;
+        onLoaded({
+          geo: vmesh.geometry,
+          mat: vmesh.material,
+          w: Math.max(1e-6, bb.max.x - bb.min.x), // 実際に詰まっているボクセルの幅
+          h: Math.max(1e-6, bb.max.y - bb.min.y), // 同・高さ
+          d: Math.max(1e-6, bb.max.z - bb.min.z), // 同・奥行き
+          minY: bb.min.y
+        });
+      }, undefined, () => {
+        // ファイル未配置などで読み込めない場合は何もしない（プレースホルダーのまま）
+      });
     }
+
+    // 中ボス（boss0.vox）。従来の3ブロック仮モデルと同様、底面を原点に合わせて
+    // 「配置高度の上に乗る」形にする（センター合わせだと大型モデルが地面にめり込む）
+    let midBossVox = null;
+    loadVoxModel("Game/vox/boss0.vox", (m) => {
+      m.geo.translate(0, -m.minY, 0);
+      midBossVox = m;
+    });
+
+    // 大ボス（boss01.vox）。仮プレースホルダー（底面が原点の単位立方体）と同様に底面合わせ
+    let finalBossVox = null;
+    loadVoxModel("Game/vox/boss01.vox", (m) => {
+      m.geo.translate(0, -m.minY, 0);
+      finalBossVox = m;
+    });
+
+    // ミサイル（missile.vox）
+    let missileVox = null;
+    loadVoxModel("Game/vox/missile.vox", (m) => { missileVox = m; });
+
+    // 弾を撃つ通常敵（teki2.vox）。リポジトリにファイルが置かれれば自動で反映され、
+    // 無い間は読み込み失敗として無視され、従来のteki.voxのままになる
+    let shooterVox = null;
+    loadVoxModel("Game/vox/teki2.vox", (m) => { shooterVox = m; });
+
+    // パワーアップ星（star.vox）。2連ショット星は従来の仮モデル同様、青系に着色して区別
+    let starVox = null;
+    let doubleStarVoxMat = null;
+    loadVoxModel("Game/vox/star.vox", (m) => {
+      doubleStarVoxMat = m.mat.clone();
+      doubleStarVoxMat.color.setHex(0x88bbff);
+      starVox = m;
+    });
 
     // 自機弾・敵弾
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
     const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
     const playerBulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x554400, roughness: 0.3 });
-    // 敵弾：背景に紛れて見えにくいことがあるため、照明の影響を受けない
-    // 常時明るい白（MeshBasicMaterial）にする。縦幅は1.5倍で視認性を上げる
+    // 敵弾は見えにくいことがあるため、縦幅・奥行きの見た目を1.5倍にして視認性を上げる
     const enemyBulletGeo = new THREE.BoxGeometry(4, 10.5, 7.5);
+    // 敵弾は視認性最優先。ライティングで暗くならないMeshBasicMaterialで常時フルブライト
+    // 表示し、色は毎フレームupdateCyberColorsが「格子線の逆色を明るく補正した色」に更新する
     const enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     // パワーアップ★（3方向ショット／2連ショット）
@@ -1677,27 +1797,40 @@
         return playerMesh;
       } else if (entity.isFinalBoss) {
         if (finalBossVox) {
-          mesh = createVoxMeshFor(finalBossVox, entity.w, entity.h);
+          mesh = new THREE.Mesh(finalBossVox.geo, finalBossVox.mat);
+          const s = entity.w / finalBossVox.w;
+          mesh.scale.set(s, s, entity.h / finalBossVox.d);
+          // 大きさは生成時に確定（syncBoxEntitiesの箱プレースホルダー用スケールは適用しない）
+          mesh.userData.fixedScale = true;
         } else {
           mesh = new THREE.Mesh(finalBossUnitGeo, finalBossMat);
-          mesh.castShadow = true;
         }
+        mesh.castShadow = true;
       } else if (entity.type === "hard_twin") {
         const mat = hardTwinMat.clone();
         mesh = new THREE.Mesh(hardTwinGeo, mat);
         mesh.castShadow = true;
       } else if (entity.isBoss) {
-        mesh = midBossVox ? createVoxMeshFor(midBossVox, entity.w, entity.h) : midBossTemplate.clone();
+        if (midBossVox) {
+          mesh = new THREE.Mesh(midBossVox.geo, midBossVox.mat);
+          const s = entity.w / midBossVox.w;
+          mesh.scale.set(s, s, entity.h / midBossVox.d);
+          mesh.castShadow = true;
+        } else {
+          mesh = midBossTemplate.clone();
+        }
       } else if (entity.isMissile) {
         if (missileVox) {
-          mesh = createVoxMeshFor(missileVox, entity.w, entity.h);
+          mesh = new THREE.Mesh(missileVox.geo, missileVox.mat);
+          const s = entity.w / missileVox.w;
+          mesh.scale.set(s, s, entity.h / missileVox.d);
         } else {
           mesh = new THREE.Mesh(missileGeo, missileMat);
-          mesh.castShadow = true;
         }
+        mesh.castShadow = true;
       } else if (entity.w === player.w && entity.h === player.h && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
         // 通常敵／軌跡敵／ジグザグ敵（MagicaVoxelモデル。読み込み前は立方体）
-        mesh = createEnemyShipMesh();
+        mesh = createEnemyShipMesh(entity);
       } else if (entity.hasOwnProperty("vx") && entity.h > entity.w) {
         // 弾（自機弾／敵弾は幅より高さが大きい細長い矩形）
         const isPlayerBullet = entity.vy < 0 || (entity.vy === 0 && entity.vx !== 0 && entity.w === 6);
@@ -1705,10 +1838,16 @@
       } else if (entity.hasOwnProperty("size")) {
         // パワーアップ★
         const isDouble = doubleShotStars.includes(entity);
-        mesh = new THREE.Mesh(powerStarGeo, isDouble ? doubleStarMat : powerStarMat);
+        if (starVox) {
+          mesh = new THREE.Mesh(starVox.geo, isDouble ? doubleStarVoxMat : starVox.mat);
+          const s = entity.w / starVox.w;
+          mesh.scale.set(s, s, entity.h / starVox.d);
+        } else {
+          mesh = new THREE.Mesh(powerStarGeo, isDouble ? doubleStarMat : powerStarMat);
+        }
         mesh.castShadow = true;
       } else {
-        mesh = createEnemyShipMesh();
+        mesh = createEnemyShipMesh(entity);
       }
       scene.add(mesh);
       entity.mesh3d = mesh;
@@ -1739,9 +1878,7 @@
     function syncBoxEntities(list) {
       for (const e of list) {
         const mesh = getOrCreateMesh(e);
-        if (e.isFinalBoss && !mesh.userData.isVoxModel) {
-          // 単位立方体プレースホルダーのみ毎フレームのスケール適用が必要
-          // （voxモデルは生成時に当たり判定サイズへスケール済み）
+        if (e.isFinalBoss && !mesh.userData.fixedScale) {
           mesh.scale.set(e.w, 60, e.h);
         }
         const cx = e.x + e.w / 2;
@@ -2000,6 +2137,11 @@
       hctx.fillStyle = "#fff";
       hctx.font = "18px sans-serif";
       hctx.fillText("SCORE: " + score, 10, 24);
+      if (superBeginnerMode) {
+        hctx.fillStyle = "#ffd24a";
+        hctx.font = "13px sans-serif";
+        hctx.fillText("超初心者モード", 10, 44);
+      }
     }
 
     function drawGameOverHud() {
@@ -2015,6 +2157,16 @@
       hctx.fillText("GAME OVER", CANVAS_W / 2, CANVAS_H / 2 - 10);
       hctx.font = "12px sans-serif";
       hctx.fillText("Rキーorゲームパッドの各ボタンでリスタート", CANVAS_W / 2, CANVAS_H / 2 + 30);
+      if (superBeginnerMode) {
+        hctx.fillStyle = "#ffd24a";
+        hctx.font = "14px sans-serif";
+        hctx.fillText("超初心者モード中", CANVAS_W / 2, CANVAS_H / 2 + 58);
+      } else if (consecutiveGameOvers >= 2) {
+        // 2回連続でゲームオーバーになったら救済コマンドを教える
+        hctx.fillStyle = "#ffd24a";
+        hctx.font = "14px sans-serif";
+        hctx.fillText("超初心者モード：上上下下左右左右BA", CANVAS_W / 2, CANVAS_H / 2 + 58);
+      }
       hctx.textAlign = "left";
     }
 
@@ -2083,6 +2235,7 @@
         clearPhase = 3;
         clearFrame = 0;
         gameCleared = true;
+        consecutiveGameOvers = 0; // クリアしたら「連続ゲームオーバー」は途切れる
       }
     }
 
@@ -2095,6 +2248,7 @@
       try {
         const pads = navigator.getGamepads ? navigator.getGamepads() : [];
         const pad0 = (activeGamepadIndex != null) ? pads[activeGamepadIndex] : pads[0];
+        pollKonamiGamepad(pad0);
         const restartByGamepad = isGamepadRestartJustPressed(pad0);
 
         if (clearPhase === 1) {
