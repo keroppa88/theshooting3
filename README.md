@@ -20,6 +20,8 @@
 * 一時的効果のある★を2種類に増量。短時間の3方向ショット、長時間の2連ショット。
 * ゲームオーバー画面からのリスタートにコントローラーのボタン使用可。
 
+--------------------------------------------
+<img width="927" height="808" alt="image" src="https://github.com/user-attachments/assets/7eb33c7b-7946-4218-9573-7fc931c98159" />
 <img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/63a564ba-cee1-4ad9-9254-3e5585785576" />
 <img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/1e56a007-4a35-4b9c-83de-55c7121bbcda" />
 
