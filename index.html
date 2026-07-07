@@ -1600,40 +1600,66 @@
       return new THREE.Mesh(enemyShipGeo, enemyShipMat);
     }
 
-    // MagicaVoxelで作った自機モデル。読み込み完了後、青い仮の箱から差し替える。
-    // グリッド全体ではなく実際に詰まっているボクセルの範囲（バウンディングボックス）を
-    // 測ってスケールすることで、以前の立方体（当たり判定30×30）と同じ大きさに合わせる。
-    voxLoader.load("Game/vox/jiki.vox", (chunks) => {
-      if (!chunks || !chunks.length) return;
-      const chunk = chunks[0];
-      const vmesh = new VOXMesh(chunk);
-      vmesh.material.roughness = 0.5;
-      vmesh.material.metalness = 0.15;
-      vmesh.geometry.computeBoundingBox();
-      const bb = vmesh.geometry.boundingBox;
-      const modelW = Math.max(1e-6, bb.max.x - bb.min.x); // 実際の機体の幅
-      const modelD = Math.max(1e-6, bb.max.z - bb.min.z); // 実際の機体の奥行き
-      playerMesh.geometry = vmesh.geometry;
-      playerMesh.material = vmesh.material;
+    // 汎用：MagicaVoxelモデルを読み込み、ジオメトリ・マテリアルと
+    // 実際に詰まっているボクセル範囲（バウンディングボックス）の実寸を保持する。
+    // グリッド全体のサイズではなく実寸で割ることで、狙った表示サイズに正確に合う。
+    function loadVoxTemplate(url, done) {
+      voxLoader.load(url, (chunks) => {
+        if (!chunks || !chunks.length) return;
+        const vmesh = new VOXMesh(chunks[0]);
+        vmesh.material.roughness = 0.5;
+        vmesh.material.metalness = 0.15;
+        vmesh.geometry.computeBoundingBox();
+        const bb = vmesh.geometry.boundingBox;
+        done({
+          geo: vmesh.geometry,
+          mat: vmesh.material,
+          w: Math.max(1e-6, bb.max.x - bb.min.x),
+          d: Math.max(1e-6, bb.max.z - bb.min.z)
+        });
+      });
+    }
+
+    // 自機モデル。読み込み完了後、青い仮の箱から差し替える。
+    loadVoxTemplate("Game/vox/jiki.vox", (t) => {
+      playerMesh.geometry = t.geo;
+      playerMesh.material = t.mat;
       // 薄い機体シルエットは同じ幅でも立方体より小さく見えるため、見た目だけ2倍にする
       // （当たり判定は従来通り30×30のまま＝見た目より当たりに寛容）
       const PLAYER_VISUAL_SCALE = 2;
       playerMesh.scale.set(
-        PLAYER_VISUAL_SCALE * player.w / modelW,
-        PLAYER_VISUAL_SCALE * player.w / modelW,
-        PLAYER_VISUAL_SCALE * player.h / modelD
+        PLAYER_VISUAL_SCALE * player.w / t.w,
+        PLAYER_VISUAL_SCALE * player.w / t.w,
+        PLAYER_VISUAL_SCALE * player.h / t.d
       );
       // 敵と逆向き（画面奥＝進行方向）を向かせる
       playerMesh.rotation.y = Math.PI;
     });
 
+    // 中ボス・大ボス・ミサイルのモデル。読み込み完了後にスポーンする個体から反映される
+    // （読み込み前は従来のプレースホルダーを使う）。
+    let midBossVox = null, finalBossVox = null, missileVox = null;
+    loadVoxTemplate("Game/vox/boss0.vox",   (t) => { midBossVox = t; });
+    loadVoxTemplate("Game/vox/boss01.vox",  (t) => { finalBossVox = t; });
+    loadVoxTemplate("Game/vox/missile.vox", (t) => { missileVox = t; });
+
+    // voxテンプレートから、当たり判定サイズ（w×h）に見た目を合わせたメッシュを作る
+    function createVoxMeshFor(t, w, h) {
+      const m = new THREE.Mesh(t.geo, t.mat);
+      m.scale.set(w / t.w, w / t.w, h / t.d);
+      m.castShadow = true;
+      m.userData.isVoxModel = true;
+      return m;
+    }
+
     // 自機弾・敵弾
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
     const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
     const playerBulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x554400, roughness: 0.3 });
-    // 敵弾も自機弾同様、縦（高さ・進行方向の長さ）は当たり判定の半分の見た目
-    const enemyBulletGeo = new THREE.BoxGeometry(4, 7, 5);
-    const enemyBulletMat = new THREE.MeshStandardMaterial({ color: 0xff5555, emissive: 0x550000, roughness: 0.3 });
+    // 敵弾：背景に紛れて見えにくいことがあるため、照明の影響を受けない
+    // 常時明るい白（MeshBasicMaterial）にする。縦幅は1.5倍で視認性を上げる
+    const enemyBulletGeo = new THREE.BoxGeometry(4, 10.5, 7.5);
+    const enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     // パワーアップ★（3方向ショット／2連ショット）
     const powerStarGeo = buildStarShapeGeometry(5, 10, 4, 10);
@@ -1650,17 +1676,25 @@
       if (entity === player) {
         return playerMesh;
       } else if (entity.isFinalBoss) {
-        mesh = new THREE.Mesh(finalBossUnitGeo, finalBossMat);
-        mesh.castShadow = true;
+        if (finalBossVox) {
+          mesh = createVoxMeshFor(finalBossVox, entity.w, entity.h);
+        } else {
+          mesh = new THREE.Mesh(finalBossUnitGeo, finalBossMat);
+          mesh.castShadow = true;
+        }
       } else if (entity.type === "hard_twin") {
         const mat = hardTwinMat.clone();
         mesh = new THREE.Mesh(hardTwinGeo, mat);
         mesh.castShadow = true;
       } else if (entity.isBoss) {
-        mesh = midBossTemplate.clone();
+        mesh = midBossVox ? createVoxMeshFor(midBossVox, entity.w, entity.h) : midBossTemplate.clone();
       } else if (entity.isMissile) {
-        mesh = new THREE.Mesh(missileGeo, missileMat);
-        mesh.castShadow = true;
+        if (missileVox) {
+          mesh = createVoxMeshFor(missileVox, entity.w, entity.h);
+        } else {
+          mesh = new THREE.Mesh(missileGeo, missileMat);
+          mesh.castShadow = true;
+        }
       } else if (entity.w === player.w && entity.h === player.h && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
         // 通常敵／軌跡敵／ジグザグ敵（MagicaVoxelモデル。読み込み前は立方体）
         mesh = createEnemyShipMesh();
@@ -1705,7 +1739,9 @@
     function syncBoxEntities(list) {
       for (const e of list) {
         const mesh = getOrCreateMesh(e);
-        if (e.isFinalBoss) {
+        if (e.isFinalBoss && !mesh.userData.isVoxModel) {
+          // 単位立方体プレースホルダーのみ毎フレームのスケール適用が必要
+          // （voxモデルは生成時に当たり判定サイズへスケール済み）
           mesh.scale.set(e.w, 60, e.h);
         }
         const cx = e.x + e.w / 2;
