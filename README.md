@@ -10,6 +10,7 @@
 ### 音楽
 * youtubeのAPIを使用。事前に設定した動画の音声を再生、ランダム選択からループする。
 * The Bee Gees/Night Fever、Daft Punk/Tron: Legacy
+* たまに広告が入るかも
 
 ### 仕様
 * 通常敵は軌跡を描く。夜の高速道路イメージ。
