@@ -1775,8 +1775,8 @@
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
     const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
     const playerBulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x554400, roughness: 0.3 });
-    // 敵弾も自機弾同様、縦（高さ・進行方向の長さ）は当たり判定の半分の見た目
-    const enemyBulletGeo = new THREE.BoxGeometry(4, 7, 5);
+    // 敵弾は見えにくいことがあるため、縦幅・奥行きの見た目を1.5倍にして視認性を上げる
+    const enemyBulletGeo = new THREE.BoxGeometry(4, 10.5, 7.5);
     // 敵弾は視認性最優先。ライティングで暗くならないMeshBasicMaterialで常時フルブライト
     // 表示し、色は毎フレームupdateCyberColorsが「格子線の逆色を明るく補正した色」に更新する
     const enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -2116,12 +2116,12 @@
       hctx.textAlign = "center";
 
       hctx.fillStyle = "#00ffff";
-      hctx.font = "40px monospace";
-      hctx.fillText("THE SHOOTINGⅡ", CANVAS_W / 2, 160);
+      hctx.font = "46px monospace";
+      hctx.fillText("THE SHOOTINGⅢ", CANVAS_W / 2, 160);
 
       hctx.font = "14px monospace";
       hctx.fillStyle = "#88ff88";
-      hctx.fillText("1 PLAYER   XBOX / KEYBOARD", CANVAS_W / 2, 200);
+      hctx.fillText("1 PLAYER   Game Controller / KEYBOARD", CANVAS_W / 2, 200);
 
       const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
       if (blinkOn) {
