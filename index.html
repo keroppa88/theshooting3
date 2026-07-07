@@ -1159,7 +1159,10 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(SPACE_COLOR);
     // 出現ラインを遠くへ押し出す分、そこがフォグで消えてしまわないよう可視距離も広げる
-    scene.fog = new THREE.Fog(SPACE_COLOR, 500, 3200);
+    // フォグは使わない。かけると出現ライン付近の敵が黒背景に沈んで見えず、
+    // ラインを越えて手前に来てから見え始める＝「線から出てこない」ように見えるため。
+    // 出現時のモヤ感はライン上の縦板（spawnGlow）のモヤが担当する。
+    scene.fog = null;
 
     // スターフォックス的な、自機の斜め後ろ上空からの追従（チェイス）カメラ。
     // 自機・敵・弾すべてが同じ座標変換（toWorldX/toDepthZ）を使うことで、
@@ -1172,7 +1175,7 @@
     const GLOBAL_X_SCALE = 0.75;
     // yの奥行き進行を実際の奥行きZに変換する係数。大きいほど敵の出現位置が遠く
     // （画面奥＝上部）に見え、画面全体を使って手前まで進んでくるようになる。
-    const DEPTH_SCALE   = 2.2;
+    const DEPTH_SCALE   = 3.4;
 
     const camera = new THREE.PerspectiveCamera(56, CANVAS_W / CANVAS_H, 1, 6000);
     function layoutCamera() {
@@ -1182,7 +1185,8 @@
     layoutCamera();
     camera.position.set(0, BASE_ALT + 180, 220);
     camera.up.set(0, 1, 0);
-    camera.lookAt(0, BASE_ALT - 10, -900);
+    // 見下ろし角をやや強めて、地平線（＝敵出現ライン）が画面の上の方に来るようにする
+    camera.lookAt(0, BASE_ALT - 45, -900);
 
     const hemiLight = new THREE.HemisphereLight(0x8fb0ff, 0x0a0a12, 0.45);
     scene.add(hemiLight);
@@ -1366,14 +1370,12 @@
     // 敵は常に同じ横線（y≈0、画面奥のほぼ固定の奥行き）から出現するため単調に見える。
     // 地平線＝敵出現ラインの位置に、カメラの方を向いた「縦の板」を立てて描く。
     // （水平の板だと真横から見ることになり、モヤがほぼ画面に映らない）
-    // 内容：地面の高さに視認性の高い明るい横一直線。その下は幅の狭いモヤ、
-    // 上はやや幅広で「モヤがある」とすぐ分かる濃さのモヤ。
+    // 内容：板の最下端＝地面の高さに、視認性の高い明るい横一直線（＝地平線）。
+    // モヤは線の上側（空側）にだけ広がる。線より下（地面側）にモヤは一切描かない。
     // 色は白のみで焼き込み、実際の色相はマテリアルのcolor（updateCyberColorsが毎フレーム
     // 更新）で決める＝格子の線と同じ色に時間経過で変化する。ゲームロジック
     // （出現座標・当たり判定）には一切影響しない、純粋な見た目だけの追加要素。
-    const SPAWN_GLOW_BELOW = 30;   // 板の下端：線より下（地面側）のモヤは幅狭く
-    const SPAWN_GLOW_ABOVE = 150;  // 板の上端：線より上（空側）のモヤはやや幅広
-    const SPAWN_GLOW_H = SPAWN_GLOW_BELOW + SPAWN_GLOW_ABOVE;
+    const SPAWN_GLOW_H = 150;        // 板の高さ＝線から上へのモヤの広がり
     const SPAWN_LINE_THICKNESS = 5;  // 横一直線の太さ（ワールド単位）
     function buildSpawnLineGlowTexture() {
       const W = 4, H = 512;  // 横方向は一様なので幅は最小限、縦方向を高解像度に
@@ -1385,17 +1387,13 @@
       for (let y = 0; y < H; y++) {
         // canvasの上端(y=0)がテクスチャ上端(v=1)＝板の上端
         const v = 1 - y / (H - 1);
-        const worldY = v * SPAWN_GLOW_H - SPAWN_GLOW_BELOW; // 板ローカルの高さ（0＝地面）
-        let a = 0;
-        if (worldY >= 0 && worldY <= SPAWN_LINE_THICKNESS) {
-          // 地平線ライン：くっきり明るい横一直線
+        const worldY = v * SPAWN_GLOW_H; // 板ローカルの高さ（0＝板の下端＝地面＝線）
+        let a;
+        if (worldY <= SPAWN_LINE_THICKNESS) {
+          // 板の最下端：地平線ライン。くっきり明るい横一直線
           a = 255;
-        } else if (worldY < 0) {
-          // 線の下：かなり幅狭いモヤ
-          const d = -worldY;
-          a = Math.round(140 * Math.max(0, 1 - d / 16));
         } else {
-          // 線の上：やや幅広で、はっきり分かるモヤ
+          // 線の上側だけ：はっきり分かるモヤ。上へ行くほど薄く消える
           const d = worldY - SPAWN_LINE_THICKNESS;
           a = Math.round(150 * Math.pow(Math.max(0, 1 - d / 120), 1.6));
         }
@@ -1414,14 +1412,12 @@
     // 地面と同じ幅（画面幅を確実に覆う広さ）にして、左右一直線のラインにする。
     const spawnGlowGeo = new THREE.PlaneGeometry(GROUND_W, SPAWN_GLOW_H, 1, 1);
     const spawnGlowMat = new THREE.MeshBasicMaterial({
-      map: buildSpawnLineGlowTexture(), transparent: true, depthWrite: false,
-      // この距離でフォグに暗くされると線の視認性が下がるのでフォグは受けない
-      fog: false
+      map: buildSpawnLineGlowTexture(), transparent: true, depthWrite: false, fog: false
     });
     const spawnGlow = new THREE.Mesh(spawnGlowGeo, spawnGlowMat);
-    // 回転なし＝+Z（カメラ側）を向いた縦板。板ローカルの高さ0（線の位置）が
-    // ワールドの地面（y=0）に来るよう中心を合わせる。
-    spawnGlow.position.set(0, (SPAWN_GLOW_ABOVE - SPAWN_GLOW_BELOW) / 2, SPAWN_LINE_Z);
+    // 回転なし＝+Z（カメラ側）を向いた縦板。板の下端（＝線）がワールドの地面（y=0）に
+    // ぴったり乗るよう、中心を板の高さの半分だけ持ち上げる。
+    spawnGlow.position.set(0, SPAWN_GLOW_H / 2, SPAWN_LINE_Z);
     scene.add(spawnGlow);
 
     // 前進している感じを出すため、地面のグリッドをゆっくりスクロールさせる。
