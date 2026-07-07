@@ -1144,8 +1144,6 @@
       clearFrame = 0;
       finalBigExplosion = null;
       clearFlashTimer = 0;
-
-      resetBackgroundScrolls();
     }
 
     function backToTitle() {
@@ -1174,8 +1172,6 @@
       clearFrame = 0;
       finalBigExplosion = null;
       clearFlashTimer = 0;
-
-      resetBackgroundScrolls();
 
       gameStarted = false;
       gameOver = false;
@@ -1515,109 +1511,6 @@
     // クリア後のクルーズ演出（星の中を飛び抜けていく特別なフェーズ）でのみ表示する。
     starPoints.visible = false;
     scene.add(starPoints);
-
-    // ===== スクロール背景画像（地面に貼るワイプ演出） =====
-    const textureLoader = new THREE.TextureLoader();
-
-    function createBackgroundScroll(src, triggerScore) {
-      const state = {
-        loaded: false, triggered: false, pending: false, active: false,
-        y: -FIELD_H, triggerScore, mesh: null
-      };
-      textureLoader.load(src, (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: false });
-        const geo = new THREE.PlaneGeometry(FIELD_W, FIELD_H);
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.y = 0.5;
-        mesh.visible = false;
-        scene.add(mesh);
-        state.mesh = mesh;
-        state.loaded = true;
-        if (state.pending) startBackgroundScroll(state);
-      });
-      return state;
-    }
-
-    function createBackgroundScroll2Frame(src0, src1, triggerScore, frameInterval) {
-      const state = {
-        loaded: false, triggered: false, pending: false, active: false,
-        y: -FIELD_H, triggerScore, mesh: null, frameInterval,
-        textures: [null, null], loadedCount: 0
-      };
-      const onTexLoaded = (tex, idx) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        state.textures[idx] = tex;
-        state.loadedCount++;
-        if (state.loadedCount >= 2) {
-          const mat = new THREE.MeshBasicMaterial({ map: state.textures[0], transparent: false });
-          const geo = new THREE.PlaneGeometry(FIELD_W, FIELD_H);
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.rotation.x = -Math.PI / 2;
-          mesh.position.y = 0.5;
-          mesh.visible = false;
-          scene.add(mesh);
-          state.mesh = mesh;
-          state.loaded = true;
-          if (state.pending) startBackgroundScroll(state);
-        }
-      };
-      textureLoader.load(src0, t => onTexLoaded(t, 0));
-      textureLoader.load(src1, t => onTexLoaded(t, 1));
-      return state;
-    }
-
-    const backgroundScrollSpeed = 0.9;
-    const backgroundScrolls = [
-      createBackgroundScroll("Game/back1.png", 1650),
-      createBackgroundScroll2Frame("Game/back2_0.png", "Game/back2_1.png", 1000, 12)
-    ];
-
-    function startBackgroundScroll(bg) {
-      bg.y = -FIELD_H;
-      bg.active = true;
-      bg.pending = false;
-      if (bg.mesh) bg.mesh.visible = true;
-    }
-
-    function resetBackgroundScrolls() {
-      for (const bg of backgroundScrolls) {
-        bg.triggered = false;
-        bg.pending = false;
-        bg.active = false;
-        bg.y = -FIELD_H;
-        if (bg.mesh) bg.mesh.visible = false;
-      }
-    }
-
-    function updateBackgroundScroll() {
-      for (const bg of backgroundScrolls) {
-        if (!bg.triggered && score >= bg.triggerScore) {
-          bg.triggered = true;
-          if (bg.loaded) startBackgroundScroll(bg);
-          else bg.pending = true;
-        }
-
-        if (!bg.active) continue;
-        bg.y += backgroundScrollSpeed;
-        if (bg.y >= FIELD_H) {
-          bg.active = false;
-          if (bg.mesh) bg.mesh.visible = false;
-          continue;
-        }
-        if (bg.mesh) {
-          bg.mesh.position.set(0, 0.5, toDepthZ(bg.y));
-          if (bg.textures) {
-            const idx = Math.floor(frameCount / bg.frameInterval) % bg.textures.length;
-            if (bg.mesh.material.map !== bg.textures[idx]) {
-              bg.mesh.material.map = bg.textures[idx];
-              bg.mesh.material.needsUpdate = true;
-            }
-          }
-        }
-      }
-    }
 
     function buildStarShapeGeometry(points, outerR, innerR, thickness) {
       const shape = new THREE.Shape();
@@ -2037,9 +1930,6 @@
       spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
       updateGroundScroll();
-      for (const bg of backgroundScrolls) {
-        if (bg.mesh) bg.mesh.visible = bg.active && clearPhase === 0;
-      }
 
       renderer.render(scene, camera);
     }
@@ -2178,7 +2068,6 @@
           ground.visible = false;
           spawnGlow.visible = false;
           starPoints.visible = false;
-          for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
           renderer.render(scene, camera);
           drawClearFlashHud();
         } else if (clearPhase === 2) {
@@ -2188,7 +2077,6 @@
           ground.visible = false;
           spawnGlow.visible = false;
           starPoints.visible = true;
-          for (const bg of backgroundScrolls) if (bg.mesh) bg.mesh.visible = false;
           renderer.render(scene, camera);
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
@@ -2224,7 +2112,6 @@
             handleCollisions();
             updateExplosions();
 
-            updateBackgroundScroll();
             render3D();
             drawUIHud();
           } else {
