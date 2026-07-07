@@ -43,6 +43,9 @@
     <canvas id="hud"   width="760" height="640"></canvas>
   </div>
 
+  <!-- BGM用YouTubeプレーヤー（画面外に隠して音だけ使う） -->
+  <div id="bgm-player" style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true"></div>
+
   <script type="importmap">
   {
     "imports": {
@@ -93,44 +96,74 @@
       s.play();
     }
 
-    // ===== BGM（最初の敵を倒したときに鳴らす） =====
-    const bgm = new Audio("Game/music.mp3");
-    bgm.loop = true;
-    bgm.volume = 0.2;
-    let bgmUnlocked = false;  // ユーザー操作で一度だけ解除
-    let bgmPlaying  = false;  // 実際に再生を開始したか
+    // ===== BGM（YouTube IFrame API。最初の敵を倒したときに鳴らす） =====
+    // 3曲を順番にループ再生する。どの曲から始まるかはランダム。
+    // APIの読み込みや再生に失敗してもゲーム本体には影響しない（無音で続行）。
+    const BGM_VIDEO_IDS = ["SkypZuY6ZvA", "NOMa56y_Was", "G6tuvKE6_lA"];
+    let bgmTrackIndex = (Math.random() * BGM_VIDEO_IDS.length) | 0; // 開始曲はランダム
+    const BGM_VOLUME = 20;     // 0〜100（旧mp3のvolume 0.2相当）
+    let bgmUnlocked = false;   // ユーザー操作があったか（ブラウザの自動再生制限対策）
+    let bgmPlaying  = false;   // 再生を開始したか（以後は曲送りで無限ループ）
+    let bgmWantPlay = false;   // ゲーム側から再生要求が出ているか
+    let ytPlayer = null;
+    let ytReady  = false;
+
+    (function loadYouTubeApi() {
+      try {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        tag.onerror = () => {};
+        document.head.appendChild(tag);
+      } catch (e) { /* BGMなしで続行 */ }
+    })();
+
+    window.onYouTubeIframeAPIReady = function () {
+      try {
+        ytPlayer = new YT.Player("bgm-player", {
+          width: 200, height: 200,
+          videoId: BGM_VIDEO_IDS[bgmTrackIndex],
+          playerVars: { autoplay: 0, controls: 0, disablekb: 1, playsinline: 1, rel: 0 },
+          events: {
+            onReady: () => {
+              ytReady = true;
+              ytPlayer.setVolume(BGM_VOLUME);
+              tryStartBgm();
+            },
+            onStateChange: (ev) => {
+              // 曲が終わったら次の曲へ。末尾まで行ったら先頭に戻る＝全体をループ
+              if (ev.data === YT.PlayerState.ENDED && bgmPlaying) {
+                bgmTrackIndex = (bgmTrackIndex + 1) % BGM_VIDEO_IDS.length;
+                try { ytPlayer.loadVideoById(BGM_VIDEO_IDS[bgmTrackIndex]); } catch (e) {}
+              }
+            },
+            onError: () => {
+              // 再生できない曲はスキップして次の曲へ
+              if (!bgmPlaying) return;
+              bgmTrackIndex = (bgmTrackIndex + 1) % BGM_VIDEO_IDS.length;
+              try { ytPlayer.loadVideoById(BGM_VIDEO_IDS[bgmTrackIndex]); } catch (e) {}
+            }
+          }
+        });
+      } catch (e) { /* BGMなしで続行 */ }
+    };
+
+    function tryStartBgm() {
+      if (!bgmWantPlay || !bgmUnlocked || !ytReady || bgmPlaying) return;
+      try {
+        ytPlayer.setVolume(BGM_VOLUME);
+        ytPlayer.loadVideoById(BGM_VIDEO_IDS[bgmTrackIndex]);
+        bgmPlaying = true;
+      } catch (e) { /* BGMなしで続行 */ }
+    }
 
     function unlockBgm() {
-      if (bgmUnlocked) return;
-      const prevVol = bgm.volume;
-      bgm.volume = 0;
-      const p = bgm.play();
-      if (p && p.then) {
-        p.then(() => {
-          bgm.pause();
-          bgm.currentTime = 0;
-          bgm.volume = prevVol;
-          bgmUnlocked = true;
-        }).catch(() => {
-          bgm.volume = prevVol;
-        });
-      } else {
-        bgmUnlocked = true;
-        bgm.volume = prevVol;
-      }
+      bgmUnlocked = true;
+      tryStartBgm();
     }
 
     function startBgmIfReady() {
-      if (!bgmUnlocked || bgmPlaying) return;
-      bgm.currentTime = 0;
-      const p = bgm.play();
-      if (p && p.then) {
-        p.then(() => {
-          bgmPlaying = true;
-        }).catch(() => {});
-      } else {
-        bgmPlaying = true;
-      }
+      bgmWantPlay = true;
+      tryStartBgm();
     }
 
     // ===== 状態フラグ =====
@@ -1348,8 +1381,11 @@
     const COLOR_HOLD_SEC = 30;
     const COLOR_TRANSITION_SEC = 15;
     const COLOR_CYCLE_SEC = COLOR_HOLD_SEC + COLOR_TRANSITION_SEC;
+    // フレーム数基準だと高リフレッシュレートの画面（120Hz等）でサイクルが
+    // 速く回ってしまうため、実時間（壁時計）基準で進める。
+    const colorEpochMs = performance.now();
     function currentColorPhase() {
-      const t = frameCount / 60;
+      const t = (performance.now() - colorEpochMs) / 1000;
       const cycleIndex = Math.floor(t / COLOR_CYCLE_SEC);
       const posInCycle = t - cycleIndex * COLOR_CYCLE_SEC;
       const localPhase = posInCycle < COLOR_HOLD_SEC
@@ -1375,7 +1411,7 @@
     // 色は白のみで焼き込み、実際の色相はマテリアルのcolor（updateCyberColorsが毎フレーム
     // 更新）で決める＝格子の線と同じ色に時間経過で変化する。ゲームロジック
     // （出現座標・当たり判定）には一切影響しない、純粋な見た目だけの追加要素。
-    const SPAWN_GLOW_H = 150;        // 板の高さ＝線から上へのモヤの広がり
+    const SPAWN_GLOW_H = 300;        // 板の高さ＝線から上へのモヤの広がり
     const SPAWN_LINE_THICKNESS = 5;  // 横一直線の太さ（ワールド単位）
     function buildSpawnLineGlowTexture() {
       const W = 4, H = 512;  // 横方向は一様なので幅は最小限、縦方向を高解像度に
@@ -1395,7 +1431,7 @@
         } else {
           // 線の上側だけ：はっきり分かるモヤ。上へ行くほど薄く消える
           const d = worldY - SPAWN_LINE_THICKNESS;
-          a = Math.round(150 * Math.pow(Math.max(0, 1 - d / 120), 1.6));
+          a = Math.round(150 * Math.pow(Math.max(0, 1 - d / 240), 1.6));
         }
         for (let x = 0; x < W; x++) {
           const idx = (y * W + x) * 4;
@@ -1652,9 +1688,11 @@
     }
 
     // 自機弾・敵弾
-    const playerBulletGeo = new THREE.BoxGeometry(6, 16, 12);
+    // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
+    const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
     const playerBulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x554400, roughness: 0.3 });
-    const enemyBulletGeo = new THREE.BoxGeometry(4, 14, 10);
+    // 敵弾も自機弾同様、縦（高さ・進行方向の長さ）は当たり判定の半分の見た目
+    const enemyBulletGeo = new THREE.BoxGeometry(4, 7, 5);
     const enemyBulletMat = new THREE.MeshStandardMaterial({ color: 0xff5555, emissive: 0x550000, roughness: 0.3 });
 
     // パワーアップ★（3方向ショット／2連ショット）
