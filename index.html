@@ -256,8 +256,8 @@
         return;
       }
 
-      if (gameCleared &&
-          (e.code === "Space" || e.code === "Enter" || e.code === "KeyR")) {
+      // クリア画像の表示中はどのキーでもタイトルへ戻る
+      if (gameCleared) {
         backToTitle();
       }
 
@@ -281,13 +281,17 @@
 
     const restartGamepadButtons = [0, 1, 2, 3, 9]; // ABXY + START
     let prevGamepadButtons = [];
+    // クリア画面「何かのボタンでタイトルへ」用：どれかのボタンが押された瞬間
+    let gamepadAnyJustPressed = false;
 
     function isGamepadRestartJustPressed(gp) {
       if (!gp || !gp.buttons) {
         prevGamepadButtons = [];
+        gamepadAnyJustPressed = false;
         return false;
       }
       const nextButtons = gp.buttons.map(b => !!(b && b.pressed));
+      gamepadAnyJustPressed = nextButtons.some((p, idx) => p && !prevGamepadButtons[idx]);
       const pressed = restartGamepadButtons.some(idx => nextButtons[idx] && !prevGamepadButtons[idx]);
       prevGamepadButtons = nextButtons;
       return pressed;
@@ -585,7 +589,8 @@
     function handleScoreEvents() {
       for (const p of missileScorePoints) {
         if (!missileSpawned[p] && score >= p) {
-          spawnMissilePair();
+          // 超初心者モード中はミサイルを出さない（発生済み扱いにして後からの一斉出現も防ぐ）
+          if (!superBeginnerMode) spawnMissilePair();
           missileSpawned[p] = true;
         }
       }
@@ -1026,9 +1031,16 @@
     function handleCollisions() {
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
+        // ラスボスは当たり判定の奥行きが深く、見た目の機体よりずっと手前で
+        // 自機弾が消えてしまう。自機弾に対しては見た目の前面（判定の上から
+        // 約65%＝モデルの手前端）までを当たりとし、弾が機体に届いて見える
+        // ようにする。敵弾の発射位置や自機との接触判定は従来通り。
+        const bulletTarget = e.isFinalBoss
+          ? { x: e.x, y: e.y, w: e.w, h: e.h * 0.65 }
+          : e;
         for (let j = bullets.length - 1; j >= 0; j--) {
           const b = bullets[j];
-          if (rectHit(e, b)) {
+          if (rectHit(bulletTarget, b)) {
             const exX = e.x + e.w / 2;
             const exY = e.y + e.h / 2;
 
@@ -1762,14 +1774,9 @@
     let shooterVox = null;
     loadVoxModel("Game/vox/teki2.vox", (m) => { shooterVox = m; });
 
-    // パワーアップ星（star.vox）。2連ショット星は従来の仮モデル同様、青系に着色して区別
+    // パワーアップ星（star.vox）。全種類ともモデルそのままの色で表示する
     let starVox = null;
-    let doubleStarVoxMat = null;
-    loadVoxModel("Game/vox/star.vox", (m) => {
-      doubleStarVoxMat = m.mat.clone();
-      doubleStarVoxMat.color.setHex(0x88bbff);
-      starVox = m;
-    });
+    loadVoxModel("Game/vox/star.vox", (m) => { starVox = m; });
 
     // 自機弾・敵弾
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
@@ -1839,7 +1846,8 @@
         // パワーアップ★
         const isDouble = doubleShotStars.includes(entity);
         if (starVox) {
-          mesh = new THREE.Mesh(starVox.geo, isDouble ? doubleStarVoxMat : starVox.mat);
+          // どの星もstar.voxそのまま（色替えなし）
+          mesh = new THREE.Mesh(starVox.geo, starVox.mat);
           const s = entity.w / starVox.w;
           mesh.scale.set(s, s, entity.h / starVox.d);
         } else {
@@ -2271,6 +2279,9 @@
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
           drawClearScreenHud();
+          // クリア画像の表示中はゲームパッドのどのボタンでもタイトルへ戻る
+          // （キーボードはkeydownリスナー側で処理）
+          if (gamepadAnyJustPressed) backToTitle();
         } else if (!gameStarted) {
           syncPlayerMesh();
           syncStarfieldMotion();
