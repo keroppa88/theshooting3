@@ -1469,15 +1469,22 @@
     spawnGlow.position.set(0, SPAWN_GLOW_H / 2, SPAWN_LINE_Z);
     scene.add(spawnGlow);
 
-    // 前進している感じを出すため、地面のグリッドをゆっくりスクロールさせる。
+    // 前進している感じを出すため、地面のグリッドをスクロールさせる。
     // このスクロール速度（ワールド座標換算）はクルーズ演出の空の星（Points）とも共有する。
     // offset.y を+方向に進めると、テクスチャ上の線は「奥（v=1側）→手前（v=0側）」に
     // 流れて見え、手前まで来たら奥へ戻って繰り返す＝奥から手前へ流れる前進感になる。
-    const GROUND_SCROLL_UV_SPEED = 0.00075;
+    // フレーム数基準だと描画レート（処理落ちや高リフレッシュレート）で体感速度が
+    // 変わってしまうため、実時間基準で進める。
+    const GROUND_SCROLL_UV_PER_SEC = 0.09; // 旧: 0.00075/フレーム(60fps換算)の2倍
     let spaceScrollZ = 0;
+    let lastScrollMs = performance.now();
     function updateGroundScroll() {
-      groundMat.map.offset.y += GROUND_SCROLL_UV_SPEED;
-      spaceScrollZ += GROUND_SCROLL_UV_SPEED * (GROUND_D / GROUND_REPEAT_Y);
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - lastScrollMs) / 1000);
+      lastScrollMs = now;
+      const step = GROUND_SCROLL_UV_PER_SEC * dt;
+      groundMat.map.offset.y += step;
+      spaceScrollZ += step * (GROUND_D / GROUND_REPEAT_Y);
       updateCyberColors();
     }
 
@@ -1701,19 +1708,27 @@
     }
 
     // MagicaVoxelで作った自機モデル。読み込み完了後、青い仮の箱から差し替える。
-    // 見た目サイズは実際の当たり判定（player.w×player.h）に合わせる。
+    // グリッド全体ではなく実際に詰まっているボクセルの範囲（バウンディングボックス）を
+    // 測ってスケールすることで、以前の立方体（当たり判定30×30）と同じ大きさに合わせる。
     voxLoader.load("Game/vox/jiki.vox", (chunks) => {
       if (!chunks || !chunks.length) return;
       const chunk = chunks[0];
       const vmesh = new VOXMesh(chunk);
       vmesh.material.roughness = 0.5;
       vmesh.material.metalness = 0.15;
+      vmesh.geometry.computeBoundingBox();
+      const bb = vmesh.geometry.boundingBox;
+      const modelW = Math.max(1e-6, bb.max.x - bb.min.x); // 実際の機体の幅
+      const modelD = Math.max(1e-6, bb.max.z - bb.min.z); // 実際の機体の奥行き
       playerMesh.geometry = vmesh.geometry;
       playerMesh.material = vmesh.material;
+      // 薄い機体シルエットは同じ幅でも立方体より小さく見えるため、見た目だけ2倍にする
+      // （当たり判定は従来通り30×30のまま＝見た目より当たりに寛容）
+      const PLAYER_VISUAL_SCALE = 2;
       playerMesh.scale.set(
-        player.w / chunk.size.x,
-        player.w / chunk.size.x,
-        player.h / chunk.size.y
+        PLAYER_VISUAL_SCALE * player.w / modelW,
+        PLAYER_VISUAL_SCALE * player.w / modelW,
+        PLAYER_VISUAL_SCALE * player.h / modelD
       );
       // 敵と逆向き（画面奥＝進行方向）を向かせる
       playerMesh.rotation.y = Math.PI;
