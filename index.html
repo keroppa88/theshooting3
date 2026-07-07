@@ -43,6 +43,9 @@
     <canvas id="hud"   width="760" height="640"></canvas>
   </div>
 
+  <!-- BGM用YouTubeプレーヤー（画面外に隠して音だけ使う） -->
+  <div id="bgm-player" style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true"></div>
+
   <script type="importmap">
   {
     "imports": {
@@ -93,44 +96,74 @@
       s.play();
     }
 
-    // ===== BGM（最初の敵を倒したときに鳴らす） =====
-    const bgm = new Audio("Game/music.mp3");
-    bgm.loop = true;
-    bgm.volume = 0.2;
-    let bgmUnlocked = false;  // ユーザー操作で一度だけ解除
-    let bgmPlaying  = false;  // 実際に再生を開始したか
+    // ===== BGM（YouTube IFrame API。最初の敵を倒したときに鳴らす） =====
+    // 3曲を順番にループ再生する。どの曲から始まるかはランダム。
+    // APIの読み込みや再生に失敗してもゲーム本体には影響しない（無音で続行）。
+    const BGM_VIDEO_IDS = ["SkypZuY6ZvA", "NOMa56y_Was", "G6tuvKE6_lA"];
+    let bgmTrackIndex = (Math.random() * BGM_VIDEO_IDS.length) | 0; // 開始曲はランダム
+    const BGM_VOLUME = 20;     // 0〜100（旧mp3のvolume 0.2相当）
+    let bgmUnlocked = false;   // ユーザー操作があったか（ブラウザの自動再生制限対策）
+    let bgmPlaying  = false;   // 再生を開始したか（以後は曲送りで無限ループ）
+    let bgmWantPlay = false;   // ゲーム側から再生要求が出ているか
+    let ytPlayer = null;
+    let ytReady  = false;
+
+    (function loadYouTubeApi() {
+      try {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        tag.onerror = () => {};
+        document.head.appendChild(tag);
+      } catch (e) { /* BGMなしで続行 */ }
+    })();
+
+    window.onYouTubeIframeAPIReady = function () {
+      try {
+        ytPlayer = new YT.Player("bgm-player", {
+          width: 200, height: 200,
+          videoId: BGM_VIDEO_IDS[bgmTrackIndex],
+          playerVars: { autoplay: 0, controls: 0, disablekb: 1, playsinline: 1, rel: 0 },
+          events: {
+            onReady: () => {
+              ytReady = true;
+              ytPlayer.setVolume(BGM_VOLUME);
+              tryStartBgm();
+            },
+            onStateChange: (ev) => {
+              // 曲が終わったら次の曲へ。末尾まで行ったら先頭に戻る＝全体をループ
+              if (ev.data === YT.PlayerState.ENDED && bgmPlaying) {
+                bgmTrackIndex = (bgmTrackIndex + 1) % BGM_VIDEO_IDS.length;
+                try { ytPlayer.loadVideoById(BGM_VIDEO_IDS[bgmTrackIndex]); } catch (e) {}
+              }
+            },
+            onError: () => {
+              // 再生できない曲はスキップして次の曲へ
+              if (!bgmPlaying) return;
+              bgmTrackIndex = (bgmTrackIndex + 1) % BGM_VIDEO_IDS.length;
+              try { ytPlayer.loadVideoById(BGM_VIDEO_IDS[bgmTrackIndex]); } catch (e) {}
+            }
+          }
+        });
+      } catch (e) { /* BGMなしで続行 */ }
+    };
+
+    function tryStartBgm() {
+      if (!bgmWantPlay || !bgmUnlocked || !ytReady || bgmPlaying) return;
+      try {
+        ytPlayer.setVolume(BGM_VOLUME);
+        ytPlayer.loadVideoById(BGM_VIDEO_IDS[bgmTrackIndex]);
+        bgmPlaying = true;
+      } catch (e) { /* BGMなしで続行 */ }
+    }
 
     function unlockBgm() {
-      if (bgmUnlocked) return;
-      const prevVol = bgm.volume;
-      bgm.volume = 0;
-      const p = bgm.play();
-      if (p && p.then) {
-        p.then(() => {
-          bgm.pause();
-          bgm.currentTime = 0;
-          bgm.volume = prevVol;
-          bgmUnlocked = true;
-        }).catch(() => {
-          bgm.volume = prevVol;
-        });
-      } else {
-        bgmUnlocked = true;
-        bgm.volume = prevVol;
-      }
+      bgmUnlocked = true;
+      tryStartBgm();
     }
 
     function startBgmIfReady() {
-      if (!bgmUnlocked || bgmPlaying) return;
-      bgm.currentTime = 0;
-      const p = bgm.play();
-      if (p && p.then) {
-        p.then(() => {
-          bgmPlaying = true;
-        }).catch(() => {});
-      } else {
-        bgmPlaying = true;
-      }
+      bgmWantPlay = true;
+      tryStartBgm();
     }
 
     // ===== 状態フラグ =====
