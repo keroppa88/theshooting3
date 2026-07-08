@@ -317,11 +317,15 @@
     }
 
     // ===== オブジェクト =====
+    // w/hは当たり判定のサイズ。見た目の機体は固定スケール（PLAYER_VISUAL_*）で
+    // 描画されるため、ここを変えても表示サイズは変わらない。
+    // 横40：見た目の翼幅に近づける／縦18：見た目の機体の奥行きに合わせて薄くする
+    // （以前の30×30は縦方向が見た目より大きく、避けたように見えて被弾していた）
     const player = {
-      x: FIELD_W / 2 - 15,
+      x: FIELD_W / 2 - 20,
       y: FIELD_H - 80,
-      w: 30,
-      h: 30,
+      w: 40,
+      h: 18,
       speed: 5,
       fireCooldown: 0
     };
@@ -1198,7 +1202,7 @@
       trailSpawnTimer = randInt(60 * 5, 60 * 10);
       hardTwinSpawnTimer = randInt(60 * 6, 60 * 12);
       zigzagSpawnTimer = randInt(60 * 6, 60 * 12);
-      player.x = FIELD_W / 2 - 15;
+      player.x = (FIELD_W - player.w) / 2;
       player.y = FIELD_H - 80;
       player.fireCooldown = 0;
       gameOver = false;
@@ -1621,7 +1625,8 @@
 
     // ---- 各スプライトの共有ジオメトリ／マテリアル ----
     // 今は全部「仮の立方体」プレースホルダー。後でちゃんとした3Dモデル（MagicaVoxel等）に差し替え予定。
-    const playerGeo = new THREE.BoxGeometry(player.w, 22, player.h);
+    // 仮の箱も従来の見た目（30×30ベース）で固定。当たり判定サイズとは連動させない
+    const playerGeo = new THREE.BoxGeometry(30, 22, 30);
     const playerMat = new THREE.MeshStandardMaterial({ color: 0x2266ff, roughness: 0.5, metalness: 0.15 });
     const playerMesh = new THREE.Mesh(playerGeo, playerMat);
     playerMesh.castShadow = true;
@@ -1713,13 +1718,15 @@
       const modelD = Math.max(1e-6, bb.max.z - bb.min.z); // 実際の機体の奥行き
       playerMesh.geometry = vmesh.geometry;
       playerMesh.material = vmesh.material;
-      // 薄い機体シルエットは同じ幅でも立方体より小さく見えるため、見た目だけ2倍にする
-      // （当たり判定は従来通り30×30のまま＝見た目より当たりに寛容）
+      // 薄い機体シルエットは同じ幅でも立方体より小さく見えるため、見た目だけ2倍にする。
+      // 表示サイズは当たり判定(player.w/h)から切り離した固定値ベース：
+      // 当たり判定を調整しても機体の見た目が変わらないようにする
+      const PLAYER_VISUAL_BASE = 30; // 従来の30×30時代と同じ見た目を維持
       const PLAYER_VISUAL_SCALE = 2;
       playerMesh.scale.set(
-        PLAYER_VISUAL_SCALE * player.w / modelW,
-        PLAYER_VISUAL_SCALE * player.w / modelW,
-        PLAYER_VISUAL_SCALE * player.h / modelD
+        PLAYER_VISUAL_SCALE * PLAYER_VISUAL_BASE / modelW,
+        PLAYER_VISUAL_SCALE * PLAYER_VISUAL_BASE / modelW,
+        PLAYER_VISUAL_SCALE * PLAYER_VISUAL_BASE / modelD
       );
       // 敵と逆向き（画面奥＝進行方向）を向かせる
       playerMesh.rotation.y = Math.PI;
@@ -1835,8 +1842,10 @@
           mesh = new THREE.Mesh(missileGeo, missileMat);
         }
         mesh.castShadow = true;
-      } else if (entity.w === player.w && entity.h === player.h && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
-        // 通常敵／軌跡敵／ジグザグ敵（MagicaVoxelモデル。読み込み前は立方体）
+      } else if (entity.w === 30 && entity.h === 30 && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
+        // 通常敵／軌跡敵／ジグザグ敵は30×30固定（MagicaVoxelモデル。読み込み前は立方体）。
+        // 以前は自機サイズ(player.w/h)と比較していたが、自機の当たり判定を
+        // 40×18に変えたため敵のサイズを直接指定する
         mesh = createEnemyShipMesh(entity);
       } else if (entity.hasOwnProperty("vx") && entity.h > entity.w) {
         // 弾（自機弾／敵弾は幅より高さが大きい細長い矩形）
