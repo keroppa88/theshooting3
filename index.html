@@ -93,7 +93,10 @@
     function playSound(sound) {
       const s = sound.cloneNode();
       s.volume = sound.volume;
-      s.play();
+      const p = s.play();
+      // ユーザー操作前（デモプレイ中など）は自動再生がブロックされることが
+      // あるため、失敗は無視して無音で続行する
+      if (p && p.catch) p.catch(() => {});
     }
 
     // ===== BGM（YouTube IFrame API。最初の敵を倒したときに鳴らす） =====
@@ -239,11 +242,82 @@
       }
     }
 
+    // ===== デモプレイ（タイトル画面を5秒放置で開始） =====
+    // 自機をAIが操作するデモ画面。何かのキー／ゲームパッドのボタン／
+    // 画面タッチ（クリック含む）でタイトル画面に戻る。
+    let demoMode = false;
+    let demoOverFrames = 0;          // デモ中にやられた後、タイトルへ戻るまでの待ち
+    let titleIdleStartMs = performance.now();
+    const DEMO_IDLE_MS = 5000;
+
+    function startDemo() {
+      demoMode = true;
+      demoOverFrames = 0;
+      demoRetargetTimer = 0; // 開始直後に最初の目標地点を選び直す
+      startGame();
+    }
+
+    function exitDemo() {
+      demoMode = false;
+      backToTitle(); // タイトル放置タイマーもbackToTitle内でリセットされる
+    }
+
+    // デモ中の自機操作：ランダムな目標地点に向かって縦横に動き回りながら
+    // 弾を撃ち続けるだけ。避けたり狙ったりはしないので途中で死ぬこともある
+    // （死んだら爆発を見せてタイトルへ戻る）。
+    let demoTargetX = 0;
+    let demoTargetY = 0;
+    let demoRetargetTimer = 0;
+    function updateDemoPlayer() {
+      demoRetargetTimer--;
+      const reached = Math.abs(demoTargetX - player.x) <= player.speed &&
+                      Math.abs(demoTargetY - player.y) <= player.speed;
+      if (demoRetargetTimer <= 0 || reached) {
+        // 次の目標地点をランダムに選ぶ。縦は画面の下半分あたりをうろつく
+        demoTargetX = Math.random() * (FIELD_W - player.w);
+        demoTargetY = FIELD_H * 0.45 + Math.random() * (FIELD_H * 0.5 - player.h);
+        demoRetargetTimer = randInt(30, 90);
+      }
+      const dx = demoTargetX - player.x;
+      const dy = demoTargetY - player.y;
+      if (Math.abs(dx) > player.speed) player.x += Math.sign(dx) * player.speed;
+      if (Math.abs(dy) > player.speed) player.y += Math.sign(dy) * player.speed;
+      player.x = Math.max(0, Math.min(FIELD_W - player.w, player.x));
+      player.y = Math.max(0, Math.min(FIELD_H - player.h, player.y));
+
+      // 撃ちっぱなし（通常プレイと同じ連射間隔）
+      if (player.fireCooldown > 0) player.fireCooldown--;
+      if (player.fireCooldown === 0) {
+        firePlayerShots();
+        player.fireCooldown = 8;
+      }
+      // パワーアップの時間経過はupdatePlayerと同じ扱い
+      if (powerUpActive) {
+        powerUpTimer--;
+        if (powerUpTimer <= 0) powerUpActive = false;
+      }
+      if (doubleShotActive && score >= doubleShotEndScore) {
+        doubleShotActive = false;
+      }
+    }
+
+    // スマホの画面タッチやマウスクリックでもデモからタイトルへ戻れるようにする
+    // （スマホ対応は本格的にはしないが、デモから抜けられなくなるのだけは防ぐ）
+    document.addEventListener("pointerdown", () => {
+      if (demoMode) exitDemo();
+    });
+
     // 入力
     const keys = {};
     document.addEventListener("keydown", e => {
       keys[e.code] = true;
       unlockBgm();
+
+      // デモ中はどのキーでもタイトル画面へ戻る
+      if (demoMode) {
+        exitDemo();
+        return;
+      }
 
       // コナミコマンド入力（ゲーム中・ゲームオーバー画面のどちらでも受け付ける。
       // キー押しっぱなしのリピートは同じ記号が連続してしまうため無視する）
@@ -317,11 +391,15 @@
     }
 
     // ===== オブジェクト =====
+    // w/hは当たり判定のサイズ。見た目の機体は固定スケール（PLAYER_VISUAL_*）で
+    // 描画されるため、ここを変えても表示サイズは変わらない。
+    // 横40：見た目の翼幅に近づける／縦18：見た目の機体の奥行きに合わせて薄くする
+    // （以前の30×30は縦方向が見た目より大きく、避けたように見えて被弾していた）
     const player = {
-      x: FIELD_W / 2 - 15,
+      x: FIELD_W / 2 - 20,
       y: FIELD_H - 80,
-      w: 30,
-      h: 30,
+      w: 40,
+      h: 18,
       speed: 5,
       fireCooldown: 0
     };
@@ -795,7 +873,8 @@
           continue;
         }
         if (rectHit({x: player.x, y: player.y, w: player.w, h: player.h}, b)) {
-          if (!gameOver) consecutiveGameOvers++;
+          // デモプレイの被弾は「連続ゲームオーバー」に数えない
+          if (!gameOver && !demoMode) consecutiveGameOvers++;
           gameOver = true;
           playSound(playerExplodeSound);
           createExplosion(player.x + player.w/2, player.y + player.h/2, false);
@@ -976,7 +1055,7 @@
         }
 
         if (rectHit(player, e)) {
-          if (!gameOver) consecutiveGameOvers++;
+          if (!gameOver && !demoMode) consecutiveGameOvers++;
           gameOver = true;
           playSound(playerExplodeSound);
           createExplosion(player.x + player.w/2, player.y + player.h/2, false);
@@ -1198,7 +1277,7 @@
       trailSpawnTimer = randInt(60 * 5, 60 * 10);
       hardTwinSpawnTimer = randInt(60 * 6, 60 * 12);
       zigzagSpawnTimer = randInt(60 * 6, 60 * 12);
-      player.x = FIELD_W / 2 - 15;
+      player.x = (FIELD_W - player.w) / 2;
       player.y = FIELD_H - 80;
       player.fireCooldown = 0;
       gameOver = false;
@@ -1245,6 +1324,10 @@
       gameStarted = false;
       gameOver = false;
       gameCleared = false;
+
+      // タイトルに戻ったら放置タイマーを仕切り直す（5秒後にデモ開始）
+      demoMode = false;
+      titleIdleStartMs = performance.now();
     }
 
     /* =========================================================================
@@ -1621,7 +1704,8 @@
 
     // ---- 各スプライトの共有ジオメトリ／マテリアル ----
     // 今は全部「仮の立方体」プレースホルダー。後でちゃんとした3Dモデル（MagicaVoxel等）に差し替え予定。
-    const playerGeo = new THREE.BoxGeometry(player.w, 22, player.h);
+    // 仮の箱も従来の見た目（30×30ベース）で固定。当たり判定サイズとは連動させない
+    const playerGeo = new THREE.BoxGeometry(30, 22, 30);
     const playerMat = new THREE.MeshStandardMaterial({ color: 0x2266ff, roughness: 0.5, metalness: 0.15 });
     const playerMesh = new THREE.Mesh(playerGeo, playerMat);
     playerMesh.castShadow = true;
@@ -1713,13 +1797,15 @@
       const modelD = Math.max(1e-6, bb.max.z - bb.min.z); // 実際の機体の奥行き
       playerMesh.geometry = vmesh.geometry;
       playerMesh.material = vmesh.material;
-      // 薄い機体シルエットは同じ幅でも立方体より小さく見えるため、見た目だけ2倍にする
-      // （当たり判定は従来通り30×30のまま＝見た目より当たりに寛容）
+      // 薄い機体シルエットは同じ幅でも立方体より小さく見えるため、見た目だけ2倍にする。
+      // 表示サイズは当たり判定(player.w/h)から切り離した固定値ベース：
+      // 当たり判定を調整しても機体の見た目が変わらないようにする
+      const PLAYER_VISUAL_BASE = 30; // 従来の30×30時代と同じ見た目を維持
       const PLAYER_VISUAL_SCALE = 2;
       playerMesh.scale.set(
-        PLAYER_VISUAL_SCALE * player.w / modelW,
-        PLAYER_VISUAL_SCALE * player.w / modelW,
-        PLAYER_VISUAL_SCALE * player.h / modelD
+        PLAYER_VISUAL_SCALE * PLAYER_VISUAL_BASE / modelW,
+        PLAYER_VISUAL_SCALE * PLAYER_VISUAL_BASE / modelW,
+        PLAYER_VISUAL_SCALE * PLAYER_VISUAL_BASE / modelD
       );
       // 敵と逆向き（画面奥＝進行方向）を向かせる
       playerMesh.rotation.y = Math.PI;
@@ -1835,8 +1921,10 @@
           mesh = new THREE.Mesh(missileGeo, missileMat);
         }
         mesh.castShadow = true;
-      } else if (entity.w === player.w && entity.h === player.h && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
-        // 通常敵／軌跡敵／ジグザグ敵（MagicaVoxelモデル。読み込み前は立方体）
+      } else if (entity.w === 30 && entity.h === 30 && !entity.hasOwnProperty("size") && !entity.hasOwnProperty("vx")) {
+        // 通常敵／軌跡敵／ジグザグ敵は30×30固定（MagicaVoxelモデル。読み込み前は立方体）。
+        // 以前は自機サイズ(player.w/h)と比較していたが、自機の当たり判定を
+        // 40×18に変えたため敵のサイズを直接指定する
         mesh = createEnemyShipMesh(entity);
       } else if (entity.hasOwnProperty("vx") && entity.h > entity.w) {
         // 弾（自機弾／敵弾は幅より高さが大きい細長い矩形）
@@ -2152,6 +2240,17 @@
       }
     }
 
+    // デモプレイ中の表示：画面中央に「Demonstration」を白で点滅させる
+    function drawDemoOverlay() {
+      const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
+      if (!blinkOn) return;
+      hctx.fillStyle = "#ffffff";
+      hctx.font = "28px monospace";
+      hctx.textAlign = "center";
+      hctx.fillText("Demonstration", CANVAS_W / 2, CANVAS_H / 2);
+      hctx.textAlign = "left";
+    }
+
     function drawGameOverHud() {
       hctx.fillStyle = "#fff";
       hctx.font = "18px sans-serif";
@@ -2291,20 +2390,27 @@
           updateGroundScroll();
           renderer.render(scene, camera);
           drawTitleHud();
-          if (pad0 && pad0.buttons) {
-            const anyPressed = pad0.buttons.some(b => b.pressed);
-            if (anyPressed) {
-              unlockBgm();
-              startGame();
-            }
+          if (pad0 && pad0.buttons && pad0.buttons.some(b => b.pressed)) {
+            unlockBgm();
+            startGame();
+          } else if (performance.now() - titleIdleStartMs >= DEMO_IDLE_MS) {
+            // タイトル画面を5秒放置したらデモプレイ開始
+            startDemo();
           }
         } else {
-          if (!gameCleared && gameOver && restartByGamepad) {
+          // デモ中はゲームパッドのどのボタンでもタイトルへ戻る
+          // （キーボードはkeydown、タッチ／クリックはpointerdownで処理）
+          if (demoMode && gamepadAnyJustPressed) {
+            exitDemo();
+          } else if (!demoMode && !gameCleared && gameOver && restartByGamepad) {
             startGame();
           }
 
-          if (!gameOver) {
-            updatePlayer();
+          if (!gameStarted) {
+            // 直前のexitDemoでタイトルに戻った。このフレームは何も描かず
+            // 次のフレームからタイトル画面の分岐に入る
+          } else if (!gameOver) {
+            if (demoMode) updateDemoPlayer(); else updatePlayer();
             updateBullets();
             updateEnemyBullets();
             updateEnemies();
@@ -2315,6 +2421,15 @@
 
             render3D();
             drawUIHud();
+            if (demoMode) drawDemoOverlay();
+          } else if (demoMode) {
+            // デモ中にやられたら爆発を少し見せてからタイトルへ
+            updateExplosions();
+            render3D();
+            drawUIHud();
+            drawDemoOverlay();
+            demoOverFrames++;
+            if (demoOverFrames >= 120) exitDemo();
           } else {
             updateExplosions();
             render3D();
