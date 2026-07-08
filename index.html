@@ -265,6 +265,11 @@
     // デモ中の自機操作：ランダムな目標地点に向かって縦横に動き回りながら
     // 弾を撃ち続けるだけ。避けたり狙ったりはしないので途中で死ぬこともある
     // （死んだら爆発を見せてタイトルへ戻る）。
+    // 行動範囲は手前の格子3マス分以内＝スクリーン表示で画面の下部1/3程度に限定し、
+    // 奥へ行きすぎないようにする。遠近法で奥がつぶれて見えるため、2D座標の1/3では
+    // なくカメラ投影で「画面の下1/3」に映る範囲（2D y≈560〜）を使う。
+    // y=560は自機の通常開始位置と同じ＝画面の約65%の高さに映る。
+    const DEMO_MIN_Y = FIELD_H - 80;
     let demoTargetX = 0;
     let demoTargetY = 0;
     let demoRetargetTimer = 0;
@@ -273,9 +278,9 @@
       const reached = Math.abs(demoTargetX - player.x) <= player.speed &&
                       Math.abs(demoTargetY - player.y) <= player.speed;
       if (demoRetargetTimer <= 0 || reached) {
-        // 次の目標地点をランダムに選ぶ。縦は画面の下半分あたりをうろつく
+        // 次の目標地点をランダムに選ぶ。縦は下部1/3の範囲内だけ
         demoTargetX = Math.random() * (FIELD_W - player.w);
-        demoTargetY = FIELD_H * 0.45 + Math.random() * (FIELD_H * 0.5 - player.h);
+        demoTargetY = DEMO_MIN_Y + Math.random() * (FIELD_H - DEMO_MIN_Y - player.h);
         demoRetargetTimer = randInt(30, 90);
       }
       const dx = demoTargetX - player.x;
@@ -283,7 +288,7 @@
       if (Math.abs(dx) > player.speed) player.x += Math.sign(dx) * player.speed;
       if (Math.abs(dy) > player.speed) player.y += Math.sign(dy) * player.speed;
       player.x = Math.max(0, Math.min(FIELD_W - player.w, player.x));
-      player.y = Math.max(0, Math.min(FIELD_H - player.h, player.y));
+      player.y = Math.max(DEMO_MIN_Y, Math.min(FIELD_H - player.h, player.y));
 
       // 撃ちっぱなし（通常プレイと同じ連射間隔）
       if (player.fireCooldown > 0) player.fireCooldown--;
