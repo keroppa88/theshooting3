@@ -36,90 +36,12 @@
     #hud {
       pointer-events: auto;
     }
-
-    /* ===== スマホ（タッチ主体端末）用レイアウト =====
-       ゲーム画面をスマホの横幅いっぱいに合わせて画面最上部に固定し、
-       その下の余白に十字ボタンを大きく配置する。
-       JSがタッチ端末を検知したときだけ body.mobile-layout が付く */
-    #touch-controls {
-      display: none;
-    }
-    body.mobile-layout {
-      flex-direction: column;
-      justify-content: flex-start;
-      align-items: center;
-      touch-action: none;
-      overflow: hidden;
-    }
-    /* ゲーム画面：横幅=画面幅、比率760:640を維持して最上部に固定 */
-    body.mobile-layout #stage {
-      width: 100vw;
-      height: calc(100vw * 640 / 760);
-      border: none;
-      flex: 0 0 auto;
-    }
-    body.mobile-layout #stage canvas {
-      width: 100%;
-      height: 100%;
-    }
-    /* 十字ボタン領域：ゲーム画面下の残り全体。中央に十字ボタンを置く */
-    body.mobile-layout #touch-controls {
-      display: flex;
-      flex: 1 1 auto;
-      width: 100%;
-      align-items: center;
-      justify-content: center;
-      touch-action: none;
-    }
-    /* 十字ボタン（3×3グリッドの十字配置。中央は空き）。
-       正方形の一辺を「ゲーム画面の面積の約8割」に相当する 82vw を目安にしつつ、
-       ゲーム画面下に残った高さを超えないよう min() で抑える。
-       ゲーム画面面積 = 100vw × 84.2vw、その8割の正方形の一辺 ≈ 82vw。 */
-    #touch-dpad {
-      --dpad-size: min(82vw, calc(98vh - 100vw * 640 / 760));
-      display: grid;
-      width: var(--dpad-size);
-      height: var(--dpad-size);
-      grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: repeat(3, 1fr);
-      gap: 3%;
-      touch-action: none;
-    }
-    .dpad-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(255, 255, 255, 0.10);
-      border: 1px solid rgba(255, 255, 255, 0.45);
-      border-radius: 14%;
-      color: rgba(255, 255, 255, 0.85);
-      font-size: 9vw;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .dpad-btn.active {
-      background: rgba(255, 255, 255, 0.4);
-    }
-    #dpad-up    { grid-area: 1 / 2; }
-    #dpad-left  { grid-area: 2 / 1; }
-    #dpad-right { grid-area: 2 / 3; }
-    #dpad-down  { grid-area: 3 / 2; }
   </style>
 </head>
 <body>
   <div id="stage" tabindex="0">
     <canvas id="webgl" width="760" height="640"></canvas>
     <canvas id="hud"   width="760" height="640"></canvas>
-  </div>
-
-  <!-- スマホ用十字ボタン（タッチ端末検知時のみ表示。位置は画面下半分の中央） -->
-  <div id="touch-controls" aria-hidden="true">
-    <div id="touch-dpad">
-      <div class="dpad-btn" id="dpad-up">▲</div>
-      <div class="dpad-btn" id="dpad-left">◀</div>
-      <div class="dpad-btn" id="dpad-right">▶</div>
-      <div class="dpad-btn" id="dpad-down">▼</div>
-    </div>
   </div>
 
   <!-- BGM用YouTubeプレーヤー（画面外に隠して音だけ使う） -->
@@ -150,12 +72,13 @@
     const hud = document.getElementById("hud");
     const hctx = hud.getContext("2d");
 
-    // クリック/タップでも開始できるようにする（フォーカス問題対策）
-    // スマホでも一通り遊べるよう、ゲームオーバー中のタップ＝リスタート、
-    // クリア画像表示中のタップ＝タイトルへ、も受け付ける
+    // クリック/タップでも開始できるようにする（フォーカス問題対策）。
+    // ただしタッチ端末（スマホ）はプレイ不可＝タップで開始・リスタートはさせない
+    // （デモをタッチしたらタイトルへ戻る処理はdocumentのpointerdownが担当）。
     stage.tabIndex = 0;
     stage.addEventListener("pointerdown", () => {
       unlockBgm();
+      if (isTouchDevice) return;
       if (!gameStarted && clearPhase === 0 && !gameCleared) {
         startGame();
       } else if (gameCleared) {
@@ -393,83 +316,16 @@
       }
     }
 
-    // スマホの画面タッチやマウスクリックでもデモからタイトルへ戻れるようにする
+    // このゲームはPC専用（キーボード操作）。スマホなどのタッチ端末では
+    // プレイはできず、タイトル放置で始まるデモを眺めるだけ。デモ画面を
+    // タッチするとタイトルへ戻る。
+    // タッチ主体端末（pointer: coarse）かどうかは描画負荷を落とす判定にも使う。
+    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+
+    // 画面タッチ（またはマウスクリック）でデモからタイトルへ戻る
     document.addEventListener("pointerdown", () => {
       if (demoMode) exitDemo();
     });
-
-    // ===== スマホ（タッチ主体端末）用のタッチ操作：十字ボタン =====
-    // マウス等の細かいポインタが無い端末（pointer: coarse）を自動検知したら、
-    // 画面上部固定レイアウトに切り替えて十字ボタンを表示する。
-    // アナログスティックだと細かい操作がしづらいため、キーボードの矢印キーと
-    // 同じデジタル入力（押している方向へ一定速度、斜めも可）にする。
-    // 弾のボタンは無く、プレイ中はオートで撃ち続ける（updatePlayer側で処理）。
-    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-    const touchControl = { active: false, x: 0, y: 0 }; // x/y は -1 / 0 / 1
-    if (isTouchDevice) {
-      document.body.classList.add("mobile-layout");
-      const zone = document.getElementById("touch-controls");
-      const dpad = document.getElementById("touch-dpad");
-      const btns = {
-        up: document.getElementById("dpad-up"),
-        down: document.getElementById("dpad-down"),
-        left: document.getElementById("dpad-left"),
-        right: document.getElementById("dpad-right")
-      };
-      let dpadPointerId = null;
-
-      // 指の位置（十字ボタン中心からの相対位置）から8方向のデジタル入力を決める。
-      // ボタンの上を正確に押さなくても、指をスライドして方向を変えられる。
-      const applyDpad = (ev) => {
-        const rect = dpad.getBoundingClientRect();
-        const dx = ev.clientX - (rect.left + rect.width / 2);
-        const dy = ev.clientY - (rect.top + rect.height / 2);
-        const len = Math.hypot(dx, dy);
-        let x = 0, y = 0;
-        if (len > 14) { // 中央の小さな遊び（デッドゾーン）
-          // 斜め入力：大きい方の軸に対して4割以上あればその軸も有効にする
-          if (Math.abs(dx) >= Math.abs(dy) * 0.42) x = dx > 0 ? 1 : -1;
-          if (Math.abs(dy) >= Math.abs(dx) * 0.42) y = dy > 0 ? 1 : -1;
-        }
-        touchControl.x = x;
-        touchControl.y = y;
-        btns.up.classList.toggle("active", y < 0);
-        btns.down.classList.toggle("active", y > 0);
-        btns.left.classList.toggle("active", x < 0);
-        btns.right.classList.toggle("active", x > 0);
-      };
-      const releaseDpad = (ev) => {
-        if (ev.pointerId !== dpadPointerId) return;
-        dpadPointerId = null;
-        touchControl.active = false;
-        touchControl.x = 0;
-        touchControl.y = 0;
-        for (const k in btns) btns[k].classList.remove("active");
-      };
-
-      zone.addEventListener("pointerdown", (ev) => {
-        ev.preventDefault();
-        unlockBgm();
-        // 十字ボタンへのタッチでもタイトルからの開始／ゲームオーバーからの
-        // リスタートができるようにする（デモ終了はdocumentのリスナーが担当）
-        if (!gameStarted && clearPhase === 0 && !gameCleared) {
-          startGame();
-        } else if (gameStarted && !demoMode && gameOver && !gameCleared) {
-          startGame();
-        }
-        dpadPointerId = ev.pointerId;
-        // 一部環境でポインタ捕捉に失敗しても、十字ボタン自体は動くようにする
-        try { zone.setPointerCapture(ev.pointerId); } catch (_) {}
-        touchControl.active = true;
-        applyDpad(ev);
-      });
-      zone.addEventListener("pointermove", (ev) => {
-        if (ev.pointerId !== dpadPointerId) return;
-        applyDpad(ev);
-      });
-      zone.addEventListener("pointerup", releaseDpad);
-      zone.addEventListener("pointercancel", releaseDpad);
-    }
 
     // 入力
     const keys = {};
@@ -990,12 +846,6 @@
         if (pad.dpadDown)  player.y += player.speed;
       }
 
-      // スマホの十字ボタン（押している方向へキーボードの矢印キーと同じ一定速度で移動）
-      if (touchControl.active) {
-        player.x += touchControl.x * player.speed;
-        player.y += touchControl.y * player.speed;
-      }
-
       player.x = Math.max(0, Math.min(FIELD_W  - player.w, player.x));
       player.y = Math.max(0, Math.min(FIELD_H - player.h, player.y));
 
@@ -1003,10 +853,8 @@
 
       const wantShootKeyboard = keys["Space"] || keys["KeyJ"];
       const wantShootPad = pad && pad.shoot;
-      // タッチ端末は弾ボタン無し＝プレイ中は常にオートで撃ち続ける
-      const wantShootAuto = isTouchDevice;
 
-      if ((wantShootKeyboard || wantShootPad || wantShootAuto) && player.fireCooldown === 0) {
+      if ((wantShootKeyboard || wantShootPad) && player.fireCooldown === 0) {
         firePlayerShots();
         player.fireCooldown = 8;
       }
@@ -2404,15 +2252,19 @@
       hctx.font = "46px monospace";
       hctx.fillText("THE SHOOTINGⅢ", CANVAS_W / 2, 160);
 
-      hctx.font = "14px monospace";
+      hctx.font = "18px monospace";
       hctx.fillStyle = "#88ff88";
-      hctx.fillText("1 PLAYER   Game Controller / KEYBOARD", CANVAS_W / 2, 200);
+      hctx.fillText("PC PLAY ONLY", CANVAS_W / 2, 205);
+
+      hctx.font = "16px monospace";
+      hctx.fillStyle = "#88ff88";
+      hctx.fillText("操作　←↑↓→ & SPACE", CANVAS_W / 2, 235);
 
       const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
       if (blinkOn) {
         hctx.font = "20px monospace";
         hctx.fillStyle = "#ffffff";
-        hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, 320);
+        hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, 330);
       }
       hctx.textAlign = "left";
     }
