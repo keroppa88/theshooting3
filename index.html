@@ -67,24 +67,33 @@
       justify-content: center;
       touch-action: none;
     }
-    #touch-stick-base {
-      position: relative;
-      width: 160px;
-      height: 160px;
-      border-radius: 50%;
-      border: 2px solid rgba(255, 255, 255, 0.5);
-      background: rgba(255, 255, 255, 0.08);
+    /* 十字ボタン（3×3グリッドの十字配置。中央は空き） */
+    #touch-dpad {
+      display: grid;
+      grid-template-columns: repeat(3, 72px);
+      grid-template-rows: repeat(3, 72px);
+      gap: 4px;
+      touch-action: none;
     }
-    #touch-stick-knob {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 70px;
-      height: 70px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.35);
-      transform: translate(-50%, -50%);
+    .dpad-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.10);
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      border-radius: 12px;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 24px;
+      user-select: none;
+      -webkit-user-select: none;
     }
+    .dpad-btn.active {
+      background: rgba(255, 255, 255, 0.4);
+    }
+    #dpad-up    { grid-area: 1 / 2; }
+    #dpad-left  { grid-area: 2 / 1; }
+    #dpad-right { grid-area: 2 / 3; }
+    #dpad-down  { grid-area: 3 / 2; }
   </style>
 </head>
 <body>
@@ -93,9 +102,14 @@
     <canvas id="hud"   width="760" height="640"></canvas>
   </div>
 
-  <!-- スマホ用タッチスティック（タッチ端末検知時のみ表示。位置は画面下半分の中央） -->
+  <!-- スマホ用十字ボタン（タッチ端末検知時のみ表示。位置は画面下半分の中央） -->
   <div id="touch-controls" aria-hidden="true">
-    <div id="touch-stick-base"><div id="touch-stick-knob"></div></div>
+    <div id="touch-dpad">
+      <div class="dpad-btn" id="dpad-up">▲</div>
+      <div class="dpad-btn" id="dpad-left">◀</div>
+      <div class="dpad-btn" id="dpad-right">▶</div>
+      <div class="dpad-btn" id="dpad-down">▼</div>
+    </div>
   </div>
 
   <!-- BGM用YouTubeプレーヤー（画面外に隠して音だけ使う） -->
@@ -374,63 +388,77 @@
       if (demoMode) exitDemo();
     });
 
-    // ===== スマホ（タッチ主体端末）用のタッチ操作 =====
+    // ===== スマホ（タッチ主体端末）用のタッチ操作：十字ボタン =====
     // マウス等の細かいポインタが無い端末（pointer: coarse）を自動検知したら、
-    // 画面上部固定レイアウトに切り替えて丸いタッチスティックを表示する。
+    // 画面上部固定レイアウトに切り替えて十字ボタンを表示する。
+    // アナログスティックだと細かい操作がしづらいため、キーボードの矢印キーと
+    // 同じデジタル入力（押している方向へ一定速度、斜めも可）にする。
     // 弾のボタンは無く、プレイ中はオートで撃ち続ける（updatePlayer側で処理）。
     const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-    const touchControl = { active: false, x: 0, y: 0 }; // x/y は -1〜1
+    const touchControl = { active: false, x: 0, y: 0 }; // x/y は -1 / 0 / 1
     if (isTouchDevice) {
       document.body.classList.add("mobile-layout");
       const zone = document.getElementById("touch-controls");
-      const base = document.getElementById("touch-stick-base");
-      const knob = document.getElementById("touch-stick-knob");
-      let stickPointerId = null;
-
-      const applyStick = (ev) => {
-        const rect = base.getBoundingClientRect();
-        const R = rect.width / 2;
-        let dx = (ev.clientX - (rect.left + R)) / R;
-        let dy = (ev.clientY - (rect.top + R)) / R;
-        const len = Math.hypot(dx, dy);
-        if (len > 1) { dx /= len; dy /= len; }
-        touchControl.x = dx;
-        touchControl.y = dy;
-        // つまみはベース円の中に収まる範囲で追従させる
-        knob.style.transform =
-          `translate(-50%, -50%) translate(${dx * R * 0.55}px, ${dy * R * 0.55}px)`;
+      const dpad = document.getElementById("touch-dpad");
+      const btns = {
+        up: document.getElementById("dpad-up"),
+        down: document.getElementById("dpad-down"),
+        left: document.getElementById("dpad-left"),
+        right: document.getElementById("dpad-right")
       };
-      const releaseStick = (ev) => {
-        if (ev.pointerId !== stickPointerId) return;
-        stickPointerId = null;
+      let dpadPointerId = null;
+
+      // 指の位置（十字ボタン中心からの相対位置）から8方向のデジタル入力を決める。
+      // ボタンの上を正確に押さなくても、指をスライドして方向を変えられる。
+      const applyDpad = (ev) => {
+        const rect = dpad.getBoundingClientRect();
+        const dx = ev.clientX - (rect.left + rect.width / 2);
+        const dy = ev.clientY - (rect.top + rect.height / 2);
+        const len = Math.hypot(dx, dy);
+        let x = 0, y = 0;
+        if (len > 14) { // 中央の小さな遊び（デッドゾーン）
+          // 斜め入力：大きい方の軸に対して4割以上あればその軸も有効にする
+          if (Math.abs(dx) >= Math.abs(dy) * 0.42) x = dx > 0 ? 1 : -1;
+          if (Math.abs(dy) >= Math.abs(dx) * 0.42) y = dy > 0 ? 1 : -1;
+        }
+        touchControl.x = x;
+        touchControl.y = y;
+        btns.up.classList.toggle("active", y < 0);
+        btns.down.classList.toggle("active", y > 0);
+        btns.left.classList.toggle("active", x < 0);
+        btns.right.classList.toggle("active", x > 0);
+      };
+      const releaseDpad = (ev) => {
+        if (ev.pointerId !== dpadPointerId) return;
+        dpadPointerId = null;
         touchControl.active = false;
         touchControl.x = 0;
         touchControl.y = 0;
-        knob.style.transform = "translate(-50%, -50%)";
+        for (const k in btns) btns[k].classList.remove("active");
       };
 
       zone.addEventListener("pointerdown", (ev) => {
         ev.preventDefault();
         unlockBgm();
-        // スティックへのタッチでもタイトルからの開始／ゲームオーバーからの
+        // 十字ボタンへのタッチでもタイトルからの開始／ゲームオーバーからの
         // リスタートができるようにする（デモ終了はdocumentのリスナーが担当）
         if (!gameStarted && clearPhase === 0 && !gameCleared) {
           startGame();
         } else if (gameStarted && !demoMode && gameOver && !gameCleared) {
           startGame();
         }
-        stickPointerId = ev.pointerId;
-        // 一部環境でポインタ捕捉に失敗しても、スティック自体は動くようにする
+        dpadPointerId = ev.pointerId;
+        // 一部環境でポインタ捕捉に失敗しても、十字ボタン自体は動くようにする
         try { zone.setPointerCapture(ev.pointerId); } catch (_) {}
         touchControl.active = true;
-        applyStick(ev);
+        applyDpad(ev);
       });
       zone.addEventListener("pointermove", (ev) => {
-        if (ev.pointerId !== stickPointerId) return;
-        applyStick(ev);
+        if (ev.pointerId !== dpadPointerId) return;
+        applyDpad(ev);
       });
-      zone.addEventListener("pointerup", releaseStick);
-      zone.addEventListener("pointercancel", releaseStick);
+      zone.addEventListener("pointerup", releaseDpad);
+      zone.addEventListener("pointercancel", releaseDpad);
     }
 
     // 入力
@@ -952,11 +980,10 @@
         if (pad.dpadDown)  player.y += player.speed;
       }
 
-      // スマホのタッチスティック（倒した方向・量で移動）
+      // スマホの十字ボタン（押している方向へキーボードの矢印キーと同じ一定速度で移動）
       if (touchControl.active) {
-        const dead = 0.2;
-        if (Math.abs(touchControl.x) > dead) player.x += touchControl.x * player.speed;
-        if (Math.abs(touchControl.y) > dead) player.y += touchControl.y * player.speed;
+        player.x += touchControl.x * player.speed;
+        player.y += touchControl.y * player.speed;
       }
 
       player.x = Math.max(0, Math.min(FIELD_W  - player.w, player.x));
@@ -1481,9 +1508,12 @@
     const SPACE_COLOR = 0x000000;
 
     const webglCanvas = document.getElementById("webgl");
-    const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true });
+    // スマホはGPUが弱く、高解像度＋アンチエイリアスだと処理落ちして動きが重くなる。
+    // タッチ端末では描画解像度を等倍(760×640)に抑え、MSAAも切る
+    // （小さい画面に縮小表示されるため見た目の差はほぼ出ない）。
+    const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: !isTouchDevice });
     renderer.setSize(CANVAS_W, CANVAS_H, false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(isTouchDevice ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = ENABLE_SHADOWS;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -1577,8 +1607,10 @@
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(repeatX, repeatY);
-      // 奥（浅い角度）で線がぼやけて潰れないように異方性フィルタを最大にする
-      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      // 奥（浅い角度）で線がぼやけて潰れないように異方性フィルタを効かせる。
+      // 最大値はスマホGPUには重いので、タッチ端末では4に抑える
+      const maxAniso = renderer.capabilities.getMaxAnisotropy();
+      tex.anisotropy = isTouchDevice ? Math.min(4, maxAniso) : maxAniso;
       // sRGB指定がないと中間調が明るく持ち上がり、線の縁が太くぼやけて見える
       tex.colorSpace = THREE.SRGBColorSpace;
       return tex;
@@ -1693,13 +1725,21 @@
         : (posInCycle - COLOR_HOLD_SEC) / COLOR_TRANSITION_SEC;
       return cycleIndex + localPhase;
     }
+    // 空グラデーションはcanvas再描画＋GPUへのテクスチャ転送を伴い毎フレームやると
+    // 無駄に重いので、色が実際に変わったフレームだけ再描画する
+    // （30秒の固定期間中は完全に同じ色なので大半のフレームをスキップできる）
+    let lastSkyColorKey = "";
     function updateCyberColors() {
       const phase = currentColorPhase();
       const lineColor = paletteColorAt(phase);
       const skyColor = paletteColorAt(phase + SKY_COLOR_OFFSET);
       groundMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
-      paintSkyGradient(skyColor);
+      const skyKey = skyColor.r + "," + skyColor.g + "," + skyColor.b;
+      if (skyKey !== lastSkyColorKey) {
+        lastSkyColorKey = skyKey;
+        paintSkyGradient(skyColor);
+      }
       updateEnemyBulletColor(lineColor);
     }
 
