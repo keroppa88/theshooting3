@@ -2250,21 +2250,25 @@
 
       hctx.fillStyle = "#00ffff";
       hctx.font = "46px monospace";
-      hctx.fillText("THE SHOOTINGⅢ", CANVAS_W / 2, 160);
+      hctx.fillText("THE SHOOTINGⅢ", CANVAS_W / 2, 115);
 
       hctx.font = "18px monospace";
       hctx.fillStyle = "#88ff88";
-      hctx.fillText("PC PLAY ONLY", CANVAS_W / 2, 205);
+      hctx.fillText("PC PLAY ONLY", CANVAS_W / 2, 162);
 
       hctx.font = "16px monospace";
       hctx.fillStyle = "#88ff88";
-      hctx.fillText("操作　←↑↓→ & SPACE", CANVAS_W / 2, 235);
+      hctx.fillText("操作　←↑↓→ & SPACE", CANVAS_W / 2, 192);
+
+      hctx.font = "16px monospace";
+      hctx.fillStyle = "#88ff88";
+      hctx.fillText("KEYBOARD & GAME CONTROLLER", CANVAS_W / 2, 217);
 
       const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
       if (blinkOn) {
         hctx.font = "20px monospace";
         hctx.fillStyle = "#ffffff";
-        hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, 330);
+        hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, 300);
       }
       hctx.textAlign = "left";
     }
