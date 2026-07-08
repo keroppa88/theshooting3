@@ -38,7 +38,8 @@
     }
 
     /* ===== スマホ（タッチ主体端末）用レイアウト =====
-       ゲーム画面を画面上部に固定し、下半分の中央に丸いタッチスティックを置く。
+       ゲーム画面をスマホの横幅いっぱいに合わせて画面最上部に固定し、
+       その下の余白に十字ボタンを大きく配置する。
        JSがタッチ端末を検知したときだけ body.mobile-layout が付く */
     #touch-controls {
       display: none;
@@ -50,29 +51,38 @@
       touch-action: none;
       overflow: hidden;
     }
+    /* ゲーム画面：横幅=画面幅、比率760:640を維持して最上部に固定 */
     body.mobile-layout #stage {
       width: 100vw;
       height: calc(100vw * 640 / 760);
       border: none;
+      flex: 0 0 auto;
     }
     body.mobile-layout #stage canvas {
       width: 100%;
       height: 100%;
     }
+    /* 十字ボタン領域：ゲーム画面下の残り全体。中央に十字ボタンを置く */
     body.mobile-layout #touch-controls {
       display: flex;
-      flex: 1;
+      flex: 1 1 auto;
       width: 100%;
       align-items: center;
       justify-content: center;
       touch-action: none;
     }
-    /* 十字ボタン（3×3グリッドの十字配置。中央は空き） */
+    /* 十字ボタン（3×3グリッドの十字配置。中央は空き）。
+       正方形の一辺を「ゲーム画面の面積の約8割」に相当する 82vw を目安にしつつ、
+       ゲーム画面下に残った高さを超えないよう min() で抑える。
+       ゲーム画面面積 = 100vw × 84.2vw、その8割の正方形の一辺 ≈ 82vw。 */
     #touch-dpad {
+      --dpad-size: min(82vw, calc(98vh - 100vw * 640 / 760));
       display: grid;
-      grid-template-columns: repeat(3, 72px);
-      grid-template-rows: repeat(3, 72px);
-      gap: 4px;
+      width: var(--dpad-size);
+      height: var(--dpad-size);
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 3%;
       touch-action: none;
     }
     .dpad-btn {
@@ -81,9 +91,9 @@
       justify-content: center;
       background: rgba(255, 255, 255, 0.10);
       border: 1px solid rgba(255, 255, 255, 0.45);
-      border-radius: 12px;
+      border-radius: 14%;
       color: rgba(255, 255, 255, 0.85);
-      font-size: 24px;
+      font-size: 9vw;
       user-select: none;
       -webkit-user-select: none;
     }
