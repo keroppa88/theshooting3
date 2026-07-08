@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>The Shooting Ⅲ (3D)</title>
   <style>
     html, body {
@@ -35,12 +36,66 @@
     #hud {
       pointer-events: auto;
     }
+
+    /* ===== スマホ（タッチ主体端末）用レイアウト =====
+       ゲーム画面を画面上部に固定し、下半分の中央に丸いタッチスティックを置く。
+       JSがタッチ端末を検知したときだけ body.mobile-layout が付く */
+    #touch-controls {
+      display: none;
+    }
+    body.mobile-layout {
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      touch-action: none;
+      overflow: hidden;
+    }
+    body.mobile-layout #stage {
+      width: 100vw;
+      height: calc(100vw * 640 / 760);
+      border: none;
+    }
+    body.mobile-layout #stage canvas {
+      width: 100%;
+      height: 100%;
+    }
+    body.mobile-layout #touch-controls {
+      display: flex;
+      flex: 1;
+      width: 100%;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+    }
+    #touch-stick-base {
+      position: relative;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.08);
+    }
+    #touch-stick-knob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.35);
+      transform: translate(-50%, -50%);
+    }
   </style>
 </head>
 <body>
   <div id="stage" tabindex="0">
     <canvas id="webgl" width="760" height="640"></canvas>
     <canvas id="hud"   width="760" height="640"></canvas>
+  </div>
+
+  <!-- スマホ用タッチスティック（タッチ端末検知時のみ表示。位置は画面下半分の中央） -->
+  <div id="touch-controls" aria-hidden="true">
+    <div id="touch-stick-base"><div id="touch-stick-knob"></div></div>
   </div>
 
   <!-- BGM用YouTubeプレーヤー（画面外に隠して音だけ使う） -->
@@ -72,10 +127,18 @@
     const hctx = hud.getContext("2d");
 
     // クリック/タップでも開始できるようにする（フォーカス問題対策）
+    // スマホでも一通り遊べるよう、ゲームオーバー中のタップ＝リスタート、
+    // クリア画像表示中のタップ＝タイトルへ、も受け付ける
     stage.tabIndex = 0;
     stage.addEventListener("pointerdown", () => {
       unlockBgm();
-      if (!gameStarted && clearPhase === 0 && !gameCleared) startGame();
+      if (!gameStarted && clearPhase === 0 && !gameCleared) {
+        startGame();
+      } else if (gameCleared) {
+        backToTitle();
+      } else if (gameStarted && gameOver && !demoMode) {
+        startGame();
+      }
     });
     stage.focus();
 
@@ -307,10 +370,68 @@
     }
 
     // スマホの画面タッチやマウスクリックでもデモからタイトルへ戻れるようにする
-    // （スマホ対応は本格的にはしないが、デモから抜けられなくなるのだけは防ぐ）
     document.addEventListener("pointerdown", () => {
       if (demoMode) exitDemo();
     });
+
+    // ===== スマホ（タッチ主体端末）用のタッチ操作 =====
+    // マウス等の細かいポインタが無い端末（pointer: coarse）を自動検知したら、
+    // 画面上部固定レイアウトに切り替えて丸いタッチスティックを表示する。
+    // 弾のボタンは無く、プレイ中はオートで撃ち続ける（updatePlayer側で処理）。
+    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+    const touchControl = { active: false, x: 0, y: 0 }; // x/y は -1〜1
+    if (isTouchDevice) {
+      document.body.classList.add("mobile-layout");
+      const zone = document.getElementById("touch-controls");
+      const base = document.getElementById("touch-stick-base");
+      const knob = document.getElementById("touch-stick-knob");
+      let stickPointerId = null;
+
+      const applyStick = (ev) => {
+        const rect = base.getBoundingClientRect();
+        const R = rect.width / 2;
+        let dx = (ev.clientX - (rect.left + R)) / R;
+        let dy = (ev.clientY - (rect.top + R)) / R;
+        const len = Math.hypot(dx, dy);
+        if (len > 1) { dx /= len; dy /= len; }
+        touchControl.x = dx;
+        touchControl.y = dy;
+        // つまみはベース円の中に収まる範囲で追従させる
+        knob.style.transform =
+          `translate(-50%, -50%) translate(${dx * R * 0.55}px, ${dy * R * 0.55}px)`;
+      };
+      const releaseStick = (ev) => {
+        if (ev.pointerId !== stickPointerId) return;
+        stickPointerId = null;
+        touchControl.active = false;
+        touchControl.x = 0;
+        touchControl.y = 0;
+        knob.style.transform = "translate(-50%, -50%)";
+      };
+
+      zone.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault();
+        unlockBgm();
+        // スティックへのタッチでもタイトルからの開始／ゲームオーバーからの
+        // リスタートができるようにする（デモ終了はdocumentのリスナーが担当）
+        if (!gameStarted && clearPhase === 0 && !gameCleared) {
+          startGame();
+        } else if (gameStarted && !demoMode && gameOver && !gameCleared) {
+          startGame();
+        }
+        stickPointerId = ev.pointerId;
+        // 一部環境でポインタ捕捉に失敗しても、スティック自体は動くようにする
+        try { zone.setPointerCapture(ev.pointerId); } catch (_) {}
+        touchControl.active = true;
+        applyStick(ev);
+      });
+      zone.addEventListener("pointermove", (ev) => {
+        if (ev.pointerId !== stickPointerId) return;
+        applyStick(ev);
+      });
+      zone.addEventListener("pointerup", releaseStick);
+      zone.addEventListener("pointercancel", releaseStick);
+    }
 
     // 入力
     const keys = {};
@@ -831,6 +952,13 @@
         if (pad.dpadDown)  player.y += player.speed;
       }
 
+      // スマホのタッチスティック（倒した方向・量で移動）
+      if (touchControl.active) {
+        const dead = 0.2;
+        if (Math.abs(touchControl.x) > dead) player.x += touchControl.x * player.speed;
+        if (Math.abs(touchControl.y) > dead) player.y += touchControl.y * player.speed;
+      }
+
       player.x = Math.max(0, Math.min(FIELD_W  - player.w, player.x));
       player.y = Math.max(0, Math.min(FIELD_H - player.h, player.y));
 
@@ -838,8 +966,10 @@
 
       const wantShootKeyboard = keys["Space"] || keys["KeyJ"];
       const wantShootPad = pad && pad.shoot;
+      // タッチ端末は弾ボタン無し＝プレイ中は常にオートで撃ち続ける
+      const wantShootAuto = isTouchDevice;
 
-      if ((wantShootKeyboard || wantShootPad) && player.fireCooldown === 0) {
+      if ((wantShootKeyboard || wantShootPad || wantShootAuto) && player.fireCooldown === 0) {
         firePlayerShots();
         player.fireCooldown = 8;
       }
@@ -1329,6 +1459,10 @@
       gameStarted = false;
       gameOver = false;
       gameCleared = false;
+
+      // タイトルの自機は定位置（中央下）に戻す（デモで死んだ位置のまま残さない）
+      player.x = (FIELD_W - player.w) / 2;
+      player.y = FIELD_H - 80;
 
       // タイトルに戻ったら放置タイマーを仕切り直す（5秒後にデモ開始）
       demoMode = false;
