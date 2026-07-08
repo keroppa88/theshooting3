@@ -669,7 +669,9 @@
       const h = (FIELD_H / 3) * 2;
       const w = h;
       const x = (FIELD_W - w) / 2;
-      const y = FIELD_H * 0.05;
+      // 定位置（左右往復する場所）をさらに格子2マス分（1マス≒33px）後ろへ下げる。
+      // これで登場位置がより奥（画面上方）になり、前進ラッシュの助走距離も伸びる。
+      const y = FIELD_H * 0.05 - 66;
       const speed = 2;
 
       enemies.push({
