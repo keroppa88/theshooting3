@@ -36,6 +36,24 @@
     #hud {
       pointer-events: auto;
     }
+
+    /* ===== スマホ（タッチ端末）表示 =====
+       ゲーム画面の横幅をスマホ画面の横幅に一致させる（縦は760:640の比率を維持）。
+       viewportメタでピンチ拡大を無効化しているうえ、幅を100vw（＝表示領域幅）で
+       指定しているため、ユーザーが拡大表示しても再読み込みすれば必ず横幅が一致する。
+       JSがタッチ端末を検知したときだけ body.mobile-fit が付く。 */
+    body.mobile-fit {
+      align-items: flex-start;
+    }
+    body.mobile-fit #stage {
+      width: 100vw;
+      height: calc(100vw * 640 / 760);
+      border: none;
+    }
+    body.mobile-fit #stage canvas {
+      width: 100%;
+      height: 100%;
+    }
   </style>
 </head>
 <body>
@@ -322,6 +340,9 @@
     // タッチ主体端末（pointer: coarse）かどうかは描画負荷を落とす判定にも使う。
     const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
 
+    // スマホではゲーム画面の横幅を画面の横幅に一致させる（CSSの body.mobile-fit）
+    if (isTouchDevice) document.body.classList.add("mobile-fit");
+
     // 画面タッチ（またはマウスクリック）でデモからタイトルへ戻る
     document.addEventListener("pointerdown", () => {
       if (demoMode) exitDemo();
@@ -339,7 +360,14 @@
         return;
       }
 
-      // コナミコマンド入力（ゲーム中・ゲームオーバー画面のどちらでも受け付ける。
+      // ゲームオーバー画面ではどのキーでもタイトル画面へ戻る
+      // （リピート＝キー押しっぱなしの連続入力は無視して、押した瞬間だけ拾う）
+      if (gameStarted && !gameCleared && gameOver && !e.repeat) {
+        backToTitle();
+        return;
+      }
+
+      // コナミコマンド入力（プレイ中に受け付ける。
       // キー押しっぱなしのリピートは同じ記号が連続してしまうため無視する）
       if (gameStarted && !e.repeat && KONAMI_KEY_SYMBOLS[e.code]) {
         feedKonami(KONAMI_KEY_SYMBOLS[e.code]);
@@ -353,10 +381,6 @@
       // クリア画像の表示中はどのキーでもタイトルへ戻る
       if (gameCleared) {
         backToTitle();
-      }
-
-      if (gameStarted && !gameCleared && gameOver && e.code === "KeyR") {
-        startGame();
       }
     });
 
@@ -656,7 +680,16 @@
         isMissile: false,
         hp: 130,
         moveDir: 1,
-        shotTimer: 120
+        shotTimer: 120,
+        // ===== 前進ラッシュ（ランジ）の状態 =====
+        // 普段は定位置(homeY)で横移動＋3方向弾。8秒ごとに前へ突進し、
+        // 手前の格子3マス分あたり(lungeTargetY)まで来てすぐ元の位置に戻る。
+        homeY: y,
+        // 突進の最前面が画面手前から約100px（＝格子3マス分ほど手前）まで来る位置
+        lungeTargetY: FIELD_H - h - 100,
+        lungePhase: "patrol",   // patrol → lungeOut → lungeBack → patrol
+        lungeTimer: 60 * 8,     // 8秒ごとにラッシュ
+        lungeSpeed: 12
       });
     }
 
@@ -1020,19 +1053,41 @@
             continue;
           }
         } else if (e.isFinalBoss) {
-          e.x += e.moveDir * e.speed;
-          if (e.x < 0) {
-            e.x = 0;
-            e.moveDir = 1;
-          } else if (e.x + e.w > FIELD_W) {
-            e.x = FIELD_W - e.w;
-            e.moveDir = -1;
-          }
+          if (e.lungePhase === "patrol") {
+            // 横に移動しながら3方向の弾を発射
+            e.x += e.moveDir * e.speed;
+            if (e.x < 0) {
+              e.x = 0;
+              e.moveDir = 1;
+            } else if (e.x + e.w > FIELD_W) {
+              e.x = FIELD_W - e.w;
+              e.moveDir = -1;
+            }
 
-          e.shotTimer--;
-          if (e.shotTimer <= 0) {
-            fireFinalBossBullets(e);
-            e.shotTimer = 180;
+            e.shotTimer--;
+            if (e.shotTimer <= 0) {
+              fireFinalBossBullets(e);
+              e.shotTimer = 180;
+            }
+
+            // 8秒ごとに前進ラッシュを開始
+            e.lungeTimer--;
+            if (e.lungeTimer <= 0) e.lungePhase = "lungeOut";
+          } else if (e.lungePhase === "lungeOut") {
+            // 前へ突進（手前の格子3マス分あたりまで近寄る）
+            e.y += e.lungeSpeed;
+            if (e.y >= e.lungeTargetY) {
+              e.y = e.lungeTargetY;
+              e.lungePhase = "lungeBack";
+            }
+          } else {
+            // すぐ元の位置へ戻る
+            e.y -= e.lungeSpeed;
+            if (e.y <= e.homeY) {
+              e.y = e.homeY;
+              e.lungePhase = "patrol";
+              e.lungeTimer = 60 * 8; // 次のラッシュまで再び8秒
+            }
           }
         } else {
           e.y += e.speed;
@@ -2307,8 +2362,8 @@
       hctx.font = "32px sans-serif";
       hctx.textAlign = "center";
       hctx.fillText("GAME OVER", CANVAS_W / 2, CANVAS_H / 2 - 10);
-      hctx.font = "12px sans-serif";
-      hctx.fillText("Rキーorゲームパッドの各ボタンでリスタート", CANVAS_W / 2, CANVAS_H / 2 + 30);
+      hctx.font = "14px sans-serif";
+      hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, CANVAS_H / 2 + 30);
       if (superBeginnerMode) {
         hctx.fillStyle = "#ffd24a";
         hctx.font = "14px sans-serif";
@@ -2401,7 +2456,8 @@
         const pads = navigator.getGamepads ? navigator.getGamepads() : [];
         const pad0 = (activeGamepadIndex != null) ? pads[activeGamepadIndex] : pads[0];
         pollKonamiGamepad(pad0);
-        const restartByGamepad = isGamepadRestartJustPressed(pad0);
+        // ボタンの押下状態を更新する（gamepadAnyJustPressed をこの中で毎フレーム更新）
+        isGamepadRestartJustPressed(pad0);
 
         if (clearPhase === 1) {
           updateClearExplosionPhase();
@@ -2443,12 +2499,12 @@
             startDemo();
           }
         } else {
-          // デモ中はゲームパッドのどのボタンでもタイトルへ戻る
+          // デモ中・ゲームオーバー中は、ゲームパッドのどのボタンでもタイトルへ戻る
           // （キーボードはkeydown、タッチ／クリックはpointerdownで処理）
           if (demoMode && gamepadAnyJustPressed) {
             exitDemo();
-          } else if (!demoMode && !gameCleared && gameOver && restartByGamepad) {
-            startGame();
+          } else if (!demoMode && !gameCleared && gameOver && gamepadAnyJustPressed) {
+            backToTitle();
           }
 
           if (!gameStarted) {
