@@ -682,13 +682,14 @@
         moveDir: 1,
         shotTimer: 120,
         // ===== 前進ラッシュ（ランジ）の状態 =====
-        // 普段は定位置(homeY)で横移動＋3方向弾。8秒ごとに前へ突進し、
-        // 手前の格子3マス分あたり(lungeTargetY)まで来てすぐ元の位置に戻る。
+        // 普段は定位置(homeY＝格子一つ分後ろ)で左右に往復しながら3方向弾。
+        // 8秒ごとに前へ出てきて、その位置で3秒とどまってから元の位置へ戻る。
         homeY: y,
         // 突進の最前面が画面手前から約100px（＝格子3マス分ほど手前）まで来る位置
         lungeTargetY: FIELD_H - h - 100,
-        lungePhase: "patrol",   // patrol → lungeOut → lungeBack → patrol
+        lungePhase: "patrol",   // patrol → lungeOut → lungeHold → lungeBack → patrol
         lungeTimer: 60 * 8,     // 8秒ごとにラッシュ
+        lungeHoldTimer: 0,      // 前へ出た位置でとどまる残りフレーム
         lungeSpeed: 12
       });
     }
@@ -1074,14 +1075,19 @@
             e.lungeTimer--;
             if (e.lungeTimer <= 0) e.lungePhase = "lungeOut";
           } else if (e.lungePhase === "lungeOut") {
-            // 前へ突進（手前の格子3マス分あたりまで近寄る）
+            // 前へ出てくる（手前の格子3マス分あたりまで近寄る）
             e.y += e.lungeSpeed;
             if (e.y >= e.lungeTargetY) {
               e.y = e.lungeTargetY;
-              e.lungePhase = "lungeBack";
+              e.lungePhase = "lungeHold";
+              e.lungeHoldTimer = 60 * 3; // その位置で3秒とどまる
             }
+          } else if (e.lungePhase === "lungeHold") {
+            // 前へ出た位置で3秒とどまる
+            e.lungeHoldTimer--;
+            if (e.lungeHoldTimer <= 0) e.lungePhase = "lungeBack";
           } else {
-            // すぐ元の位置へ戻る
+            // 元の位置（格子一つ分後ろ）へ戻る
             e.y -= e.lungeSpeed;
             if (e.y <= e.homeY) {
               e.y = e.homeY;
