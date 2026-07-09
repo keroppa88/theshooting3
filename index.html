@@ -691,12 +691,14 @@
         // 普段は定位置(homeY＝格子一つ分後ろ)で左右に往復しながら3方向弾。
         // 8秒ごとに前へ出てきて、その位置で3秒とどまってから元の位置へ戻る。
         homeY: y,
-        // 突進の最前面が画面手前から約100px（＝格子3マス分ほど手前）まで来る位置
-        lungeTargetY: FIELD_H - h - 100,
+        // 突進の最前面が画面のほぼ最前面（手前から約20px）まで来る位置。
+        // 前へ大きく出てくる迫力重視。
+        lungeTargetY: FIELD_H - h - 20,
         lungePhase: "patrol",   // patrol → lungeOut → lungeHold → lungeBack → patrol
         lungeTimer: 60 * 8,     // 8秒ごとにラッシュ
         lungeHoldTimer: 0,      // 前へ出た位置でとどまる残りフレーム
-        lungeSpeed: 12
+        lungeHoldShotTimer: 0,  // 前へ出た位置での発射間隔
+        lungeSpeed: 6           // 前へ出る／戻る速さ（従来の50%）
       });
     }
 
@@ -848,8 +850,8 @@
       }
     }
 
-    function fireFinalBossBullets(boss) {
-      const speed = 6*1.5;
+    function fireFinalBossBullets(boss, speedScale = 1) {
+      const speed = 6 * 1.5 * speedScale;
       const angle = Math.PI / 6;
 
       const cx = boss.x + boss.w * 0.5;
@@ -1081,15 +1083,21 @@
             e.lungeTimer--;
             if (e.lungeTimer <= 0) e.lungePhase = "lungeOut";
           } else if (e.lungePhase === "lungeOut") {
-            // 前へ出てくる（手前の格子3マス分あたりまで近寄る）
+            // 前へ出てくる（従来より1マス前まで近寄る）。移動速度は50%ダウン
             e.y += e.lungeSpeed;
             if (e.y >= e.lungeTargetY) {
               e.y = e.lungeTargetY;
               e.lungePhase = "lungeHold";
               e.lungeHoldTimer = 60 * 3; // その位置で3秒とどまる
+              e.lungeHoldShotTimer = 0;  // とどまった直後に1発目
             }
           } else if (e.lungePhase === "lungeHold") {
-            // 前へ出た位置で3秒とどまる
+            // 前へ出た位置で3秒とどまり、その間は速度50%ダウンの3方向弾を発射
+            e.lungeHoldShotTimer--;
+            if (e.lungeHoldShotTimer <= 0) {
+              fireFinalBossBullets(e, 0.5);
+              e.lungeHoldShotTimer = 60; // 1秒ごと
+            }
             e.lungeHoldTimer--;
             if (e.lungeHoldTimer <= 0) e.lungePhase = "lungeBack";
           } else {
