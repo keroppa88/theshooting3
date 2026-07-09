@@ -1694,12 +1694,14 @@
       updateBossBulletColor(lineColor);
     }
 
-    // ラスボス弾は基本「白」で目立たせる。ただし格子線が白に近い（明るく無彩色寄り）
-    // ときは白同士で埋もれるので、目立つピンクに切り替える（黄色でも可）。
+    // ラスボス弾は基本「白」で目立たせる。ただし格子線が本当に白に近い
+    // （全チャンネルが高い＝ほぼ無彩色で明るい）ときだけ、白同士で埋もれないよう
+    // ピンクに切り替える。青白など「明るいが色みのある線」は白のまま
+    // （白弾でも十分見えるため。以前は閾値が低すぎて青白でもピンクになっていた）。
     function updateBossBulletColor(lineColor) {
       const minC = Math.min(lineColor.r, lineColor.g, lineColor.b);
-      if (minC > 135) {
-        bossBulletMat.color.setHex(0xff3399); // 白に近い格子線 → ピンク
+      if (minC > 210) {
+        bossBulletMat.color.setHex(0xff3399); // ほぼ白の格子線 → ピンク
       } else {
         bossBulletMat.color.setHex(0xffffff); // 通常 → 白
       }
