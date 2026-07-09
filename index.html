@@ -276,12 +276,14 @@
     let demoMode = false;
     let demoOverFrames = 0;          // デモ中にやられた後、タイトルへ戻るまでの待ち
     let titleIdleStartMs = performance.now();
-    const DEMO_IDLE_MS = 5000;
+    // タイトル放置からデモに移るまでの待ち時間。初回は5秒、2回目以降は10秒。
+    let demoIdleMs = 5000;
 
     function startDemo() {
       demoMode = true;
       demoOverFrames = 0;
       demoRetargetTimer = 0; // 開始直後に最初の目標地点を選び直す
+      demoIdleMs = 10000;    // 次回からのデモ開始は10秒後
       startGame();
     }
 
@@ -664,15 +666,17 @@
     }
 
     function spawnFinalBoss() {
-      // 遠く（画面奥）にいて小さく見えるため、従来（FIELD_H/3）の2倍の大きさにする。
-      // 当たり判定もこのw/hがそのまま使われるので、見た目と一緒に2倍になる。
-      const h = (FIELD_H / 3) * 2;
+      // 画面の端から端まで左右に往復させるため、横幅を画面幅の半分にする。
+      // 以前は画面幅とほぼ同じ大きさで、往復の余地が数十pxしかなく
+      // 「小刻みに震える」だけになっていた。半分にすると残り半分を移動でき、
+      // 機体の左右の端がそれぞれ画面の端に届く＝端から端への往復になる。
+      const h = FIELD_W / 2;
       const w = h;
       const x = (FIELD_W - w) / 2;
-      // 定位置（左右往復する場所）をさらに格子2マス分（1マス≒33px）後ろへ下げる。
-      // これで登場位置がより奥（画面上方）になり、前進ラッシュの助走距離も伸びる。
+      // 定位置（左右往復する場所）は格子2マス分（1マス≒33px）後ろ。
       const y = FIELD_H * 0.05 - 66;
-      const speed = 2;
+      // 端から端へゆったり往復する速さ（範囲が広がったので分かりやすく動く）
+      const speed = 3;
 
       enemies.push({
         x, y, w, h, speed,
@@ -2502,8 +2506,8 @@
           if (pad0 && pad0.buttons && pad0.buttons.some(b => b.pressed)) {
             unlockBgm();
             startGame();
-          } else if (performance.now() - titleIdleStartMs >= DEMO_IDLE_MS) {
-            // タイトル画面を5秒放置したらデモプレイ開始
+          } else if (performance.now() - titleIdleStartMs >= demoIdleMs) {
+            // タイトル画面を一定時間放置したらデモプレイ開始（初回5秒・以降10秒）
             startDemo();
           }
         } else {
