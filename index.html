@@ -2267,7 +2267,7 @@
         group.add(mesh);
         group.userData.rings.push({ mesh, ring });
       }
-      const coreGeo = new THREE.SphereGeometry(1, 16, 12);
+      const coreGeo = new THREE.SphereGeometry(1, 32, 24);
       const coreMat = new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
       const core = new THREE.Mesh(coreGeo, coreMat);
       core.position.y = 20;
@@ -2294,13 +2294,18 @@
 
       const tLead = Math.min(1, baseT);
       const easeLead = Math.sqrt(tLead);
-      let fillColor;
-      if (baseT < 0.5) fillColor = 0xffe066;
-      else if (baseT < 0.8) fillColor = 0xffffff;
-      else fillColor = (fw.life % 6) < 3 ? 0xffffff : 0xffcccc;
-      group.userData.core.material.color.setHex(fillColor);
-      group.userData.core.material.opacity = 0.85 * (baseT > 0 ? 1 : 0);
-      group.userData.core.scale.setScalar(Math.max(0.001, fw.maxRadius * easeLead));
+      // 巨大球体：カラフルに点滅しながらどんどん大きくなる。
+      // 数フレームごとに虹色を切り替えて派手に点滅させる。
+      const FLASH_COLORS = [
+        0xff2266, 0xff8a00, 0xffee00, 0x22ff66,
+        0x22ccff, 0x4466ff, 0xaa44ff, 0xff44cc
+      ];
+      const flashColor = FLASH_COLORS[Math.floor(fw.life / 4) % FLASH_COLORS.length];
+      group.userData.core.material.color.setHex(flashColor);
+      // 終盤は少しだけ薄れて消える
+      group.userData.core.material.opacity = 0.9 * Math.max(0, 1 - Math.max(0, baseT - 0.85) / 0.15);
+      // 通常の1.6倍まで膨らむ巨大球体
+      group.userData.core.scale.setScalar(Math.max(0.001, fw.maxRadius * 1.6 * easeLead));
 
       for (const { mesh, ring } of group.userData.rings) {
         const tRaw = (baseT - ring.delay) / (1 - ring.delay);
