@@ -691,9 +691,9 @@
         // 普段は定位置(homeY＝格子一つ分後ろ)で左右に往復しながら3方向弾。
         // 8秒ごとに前へ出てきて、その位置で3秒とどまってから元の位置へ戻る。
         homeY: y,
-        // 突進の最前面が画面手前から約67px（＝格子2マス分ほど手前。従来より
-        // もう1マス前）まで来る位置
-        lungeTargetY: FIELD_H - h - 67,
+        // 突進の最前面が画面のほぼ最前面（手前から約20px）まで来る位置。
+        // 前へ大きく出てくる迫力重視。
+        lungeTargetY: FIELD_H - h - 20,
         lungePhase: "patrol",   // patrol → lungeOut → lungeHold → lungeBack → patrol
         lungeTimer: 60 * 8,     // 8秒ごとにラッシュ
         lungeHoldTimer: 0,      // 前へ出た位置でとどまる残りフレーム
