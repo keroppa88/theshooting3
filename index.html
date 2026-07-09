@@ -231,9 +231,10 @@
     const starSpawned    = {};
     const doubleShotStarSpawned = {};
 
-    // ===== 超初心者モード（コナミコマンド：上上下下左右左右BA） =====
-    // 発動すると通常敵・中ボスが弾を撃たなくなり、壁（硬い横長ブロック）も出なくなる。
-    // ラスボスだけは通常通り三方向弾を撃つ。ページを再読み込みするまで有効。
+    // ===== 超初心者無敵モード（コナミコマンド：上上下下左右左右BA） =====
+    // 発動すると自機の当たり判定が無くなり、弾に当たっても敵に当たっても死なない。
+    // 敵・ミサイル・壁・敵の動きはすべて通常どおり（無敵になるだけ）。
+    // ページを再読み込みするまで有効。
     let superBeginnerMode = false;
     let consecutiveGameOvers = 0; // クリアでリセット。2以上でゲームオーバー画面にコマンドのヒントを出す
     const KONAMI_SEQ = ["U", "U", "D", "D", "L", "R", "L", "R", "B", "A"];
@@ -500,8 +501,7 @@
       const speed = 2 + Math.random() * 2;
 
       const shooterRatio = getShooterRatio(score);
-      // 超初心者モード中は弾を撃つ敵そのものを出さない
-      const canShoot = !superBeginnerMode && (shooterRatio > 0) && (Math.random() < shooterRatio);
+      const canShoot = (shooterRatio > 0) && (Math.random() < shooterRatio);
       const isDoublePattern = (score > 1300);
 
       const e = {
@@ -734,8 +734,7 @@
     function handleScoreEvents() {
       for (const p of missileScorePoints) {
         if (!missileSpawned[p] && score >= p) {
-          // 超初心者モード中はミサイルを出さない（発生済み扱いにして後からの一斉出現も防ぐ）
-          if (!superBeginnerMode) spawnMissilePair();
+          spawnMissilePair();
           missileSpawned[p] = true;
         }
       }
@@ -942,7 +941,8 @@
           enemyBullets.splice(i, 1);
           continue;
         }
-        if (rectHit({x: player.x, y: player.y, w: player.w, h: player.h}, b)) {
+        // 超初心者無敵モード中は自機に当たり判定がなく、弾はすり抜ける（死なない）
+        if (!superBeginnerMode && rectHit({x: player.x, y: player.y, w: player.w, h: player.h}, b)) {
           // デモプレイの被弾は「連続ゲームオーバー」に数えない
           if (!gameOver && !demoMode) consecutiveGameOvers++;
           gameOver = true;
@@ -962,8 +962,7 @@
           enemySpawnTimer = 40;
         }
 
-        // 超初心者モード中は壁（横長の硬いブロック）を出さない
-        if (!superBeginnerMode && score > 500 && score < 1650) {
+        if (score > 500 && score < 1650) {
           hardTwinSpawnTimer--;
           if (hardTwinSpawnTimer <= 0) {
             spawnHardTwin();
@@ -1003,9 +1002,7 @@
 
           e.shotTimer--;
           if (e.shotTimer <= 0) {
-            if (!superBeginnerMode) {
-              enemyBullets.push({ x: e.x + e.w/2 - 2, y: e.y + e.h, w: 4, h: 10, vx: 0, vy: 5 });
-            }
+            enemyBullets.push({ x: e.x + e.w/2 - 2, y: e.y + e.h, w: 4, h: 10, vx: 0, vy: 5 });
             e.shotTimer = 120;
           }
 
@@ -1025,15 +1022,13 @@
 
           e.shotTimer--;
           if (e.shotTimer <= 0) {
-            if (!superBeginnerMode) {
-              const speed = 5;
-              const ang = Math.PI / 6;
-              const cx = e.x + e.w/2 - 2;
-              const cy = e.y + e.h/2;
+            const speed = 5;
+            const ang = Math.PI / 6;
+            const cx = e.x + e.w/2 - 2;
+            const cy = e.y + e.h/2;
 
-              enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx: -Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
-              enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx:  Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
-            }
+            enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx: -Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
+            enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx:  Math.sin(ang) * speed, vy: Math.cos(ang) * speed });
             e.shotTimer = 120;
           }
 
@@ -1139,12 +1134,10 @@
             if (typeof e.shotTimer !== "number") e.shotTimer = 180;
             e.shotTimer--;
             if (e.shotTimer <= 0) {
-              if (!superBeginnerMode) {
-                const speed = 6;
-                const y0 = e.y + e.h;
-                enemyBullets.push({ x: e.x + e.w * 0.35, y: y0, w: 4, h: 10, vx: 0, vy: speed });
-                enemyBullets.push({ x: e.x + e.w * 0.65, y: y0, w: 4, h: 10, vx: 0, vy: speed });
-              }
+              const speed = 6;
+              const y0 = e.y + e.h;
+              enemyBullets.push({ x: e.x + e.w * 0.35, y: y0, w: 4, h: 10, vx: 0, vy: speed });
+              enemyBullets.push({ x: e.x + e.w * 0.65, y: y0, w: 4, h: 10, vx: 0, vy: speed });
               e.shotTimer = 180;
             }
           }
@@ -1152,14 +1145,15 @@
           if (e.isShooter && !e.isBoss && e.shotsLeft > 0) {
             e.shotTimer--;
             if (e.shotTimer <= 0) {
-              if (!superBeginnerMode) fireEnemyBulletsFromEnemy(e);
+              fireEnemyBulletsFromEnemy(e);
               e.shotsLeft = 0;
             }
           }
         }
 
+        // 超初心者無敵モード中は敵と接触しても死なない（当たり判定なし）
         const playerTarget = e.isFinalBoss ? finalBossHitBox(e) : e;
-        if (rectHit(player, playerTarget)) {
+        if (!superBeginnerMode && rectHit(player, playerTarget)) {
           if (!gameOver && !demoMode) consecutiveGameOvers++;
           gameOver = true;
           playSound(playerExplodeSound);
@@ -2396,7 +2390,7 @@
       if (superBeginnerMode) {
         hctx.fillStyle = "#ffd24a";
         hctx.font = "13px sans-serif";
-        hctx.fillText("超初心者モード", 10, 44);
+        hctx.fillText("超初心者無敵モード", 10, 44);
       }
     }
 
@@ -2424,15 +2418,11 @@
       hctx.fillText("GAME OVER", CANVAS_W / 2, CANVAS_H / 2 - 10);
       hctx.font = "14px sans-serif";
       hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, CANVAS_H / 2 + 30);
-      if (superBeginnerMode) {
-        hctx.fillStyle = "#ffd24a";
-        hctx.font = "14px sans-serif";
-        hctx.fillText("超初心者モード中", CANVAS_W / 2, CANVAS_H / 2 + 58);
-      } else if (consecutiveGameOvers >= 2) {
+      if (consecutiveGameOvers >= 2) {
         // 2回連続でゲームオーバーになったら救済コマンドを教える
         hctx.fillStyle = "#ffd24a";
         hctx.font = "14px sans-serif";
-        hctx.fillText("超初心者モード：上上下下左右左右BA", CANVAS_W / 2, CANVAS_H / 2 + 58);
+        hctx.fillText("超初心者無敵モード：上上下下左右左右BA", CANVAS_W / 2, CANVAS_H / 2 + 58);
       }
       hctx.textAlign = "left";
     }
