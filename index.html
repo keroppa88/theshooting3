@@ -678,6 +678,14 @@
       // 端から端へゆったり往復する速さ（範囲が広がったので分かりやすく動く）
       const speed = 3;
 
+      // 前進時に止まる位置。見た目の前面が「手前2格子分（約67px）」を残す位置で
+      // 止め、そこは自機が安全に退避できる領域として確保する。
+      // 見た目の奥行き＝h/DEPTH_SCALE。前面フィールドy＝中心cy＋見た目奥行き/2。
+      const SAFE_FRONT = 67;
+      const lungeTargetY = (FIELD_H - SAFE_FRONT) - h / 2 - h / (2 * DEPTH_SCALE);
+      // 前へ出る／戻るは2秒(120フレーム)。移動量＝距離/120。
+      const lungeStep = (lungeTargetY - y) / 120;
+
       enemies.push({
         x, y, w, h, speed,
         isBoss: true,
@@ -688,17 +696,14 @@
         moveDir: 1,
         shotTimer: 120,
         // ===== 前進ラッシュ（ランジ）の状態 =====
-        // 普段は定位置(homeY＝格子一つ分後ろ)で左右に往復しながら3方向弾。
-        // 8秒ごとに前へ出てきて、その位置で3秒とどまってから元の位置へ戻る。
+        // 定位置で8秒間、左右に往復しながら3方向弾 → 2秒かけて前へ → 1秒とどまる
+        //（低速の3方向弾）→ 2秒かけて後ろへ戻る、をループ。
         homeY: y,
-        // 突進の最前面が画面のほぼ最前面（手前から約20px）まで来る位置。
-        // 前へ大きく出てくる迫力重視。
-        lungeTargetY: FIELD_H - h - 20,
+        lungeTargetY,
+        lungeStep,
         lungePhase: "patrol",   // patrol → lungeOut → lungeHold → lungeBack → patrol
-        lungeTimer: 60 * 8,     // 8秒ごとにラッシュ
-        lungeHoldTimer: 0,      // 前へ出た位置でとどまる残りフレーム
-        lungeHoldShotTimer: 0,  // 前へ出た位置での発射間隔
-        lungeSpeed: 6           // 前へ出る／戻る速さ（従来の50%）
+        phaseTimer: 60 * 8,     // 各フェーズの残りフレーム（patrolは8秒）
+        lungeHoldShotTimer: 0   // 前へ出た位置での発射間隔
       });
     }
 
@@ -1063,7 +1068,7 @@
           }
         } else if (e.isFinalBoss) {
           if (e.lungePhase === "patrol") {
-            // 横に移動しながら3方向の弾を発射
+            // 8秒間、左右（端から端）に往復しながら3方向の弾を発射
             e.x += e.moveDir * e.speed;
             if (e.x < 0) {
               e.x = 0;
@@ -1079,34 +1084,35 @@
               e.shotTimer = 180;
             }
 
-            // 8秒ごとに前進ラッシュを開始
-            e.lungeTimer--;
-            if (e.lungeTimer <= 0) e.lungePhase = "lungeOut";
+            e.phaseTimer--;
+            if (e.phaseTimer <= 0) { e.lungePhase = "lungeOut"; e.phaseTimer = 120; }
           } else if (e.lungePhase === "lungeOut") {
-            // 前へ出てくる（従来より1マス前まで近寄る）。移動速度は50%ダウン
-            e.y += e.lungeSpeed;
-            if (e.y >= e.lungeTargetY) {
+            // 2秒かけて前へ出てくる
+            e.y += e.lungeStep;
+            e.phaseTimer--;
+            if (e.phaseTimer <= 0) {
               e.y = e.lungeTargetY;
               e.lungePhase = "lungeHold";
-              e.lungeHoldTimer = 60 * 3; // その位置で3秒とどまる
-              e.lungeHoldShotTimer = 0;  // とどまった直後に1発目
+              e.phaseTimer = 60;        // 前で1秒とどまる
+              e.lungeHoldShotTimer = 0; // 直後に1発目
             }
           } else if (e.lungePhase === "lungeHold") {
-            // 前へ出た位置で3秒とどまり、その間は速度50%ダウンの3方向弾を発射
+            // 前へ出た位置で1秒とどまり、その間は速度50%ダウンの3方向弾を発射
             e.lungeHoldShotTimer--;
             if (e.lungeHoldShotTimer <= 0) {
               fireFinalBossBullets(e, 0.5);
-              e.lungeHoldShotTimer = 60; // 1秒ごと
+              e.lungeHoldShotTimer = 30;
             }
-            e.lungeHoldTimer--;
-            if (e.lungeHoldTimer <= 0) e.lungePhase = "lungeBack";
+            e.phaseTimer--;
+            if (e.phaseTimer <= 0) { e.lungePhase = "lungeBack"; e.phaseTimer = 120; }
           } else {
-            // 元の位置（格子一つ分後ろ）へ戻る
-            e.y -= e.lungeSpeed;
-            if (e.y <= e.homeY) {
+            // 2秒かけて元の位置（後ろ）へ戻る
+            e.y -= e.lungeStep;
+            e.phaseTimer--;
+            if (e.phaseTimer <= 0) {
               e.y = e.homeY;
               e.lungePhase = "patrol";
-              e.lungeTimer = 60 * 8; // 次のラッシュまで再び8秒
+              e.phaseTimer = 60 * 8; // 次のラッシュまで再び8秒
             }
           }
         } else {
@@ -1149,7 +1155,8 @@
           }
         }
 
-        if (rectHit(player, e)) {
+        const playerTarget = e.isFinalBoss ? finalBossHitBox(e) : e;
+        if (rectHit(player, playerTarget)) {
           if (!gameOver && !demoMode) consecutiveGameOvers++;
           gameOver = true;
           playSound(playerExplodeSound);
@@ -1202,16 +1209,23 @@
       }
     }
 
+    // ラスボスの当たり判定を「見た目のモデル」に合わせた箱にする。
+    // フィールドのy(奥行き)は3D空間ではDEPTH_SCALE倍に引き伸ばされるため、
+    // 箱のh(=240)をそのまま判定に使うと、見た目より約3.4倍も奥行きの深い
+    // 判定になり、機体が見た目で届く前に自機がやられたり、自機弾が機体の
+    // ずっと手前で消えたりする。見た目の奥行き(h/DEPTH_SCALE)に合わせた
+    // 薄い箱を機体中心に置くことで、見た目と判定を一致させる。
+    function finalBossHitBox(e) {
+      const cy = e.y + e.h / 2;
+      const depth = e.h / DEPTH_SCALE; // 見た目の奥行き（フィールドy換算）
+      return { x: e.x, y: cy - depth / 2, w: e.w, h: depth };
+    }
+
     function handleCollisions() {
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
-        // ラスボスは当たり判定の奥行きが深く、見た目の機体よりずっと手前で
-        // 自機弾が消えてしまう。自機弾に対しては見た目の前面（判定の上から
-        // 約65%＝モデルの手前端）までを当たりとし、弾が機体に届いて見える
-        // ようにする。敵弾の発射位置や自機との接触判定は従来通り。
-        const bulletTarget = e.isFinalBoss
-          ? { x: e.x, y: e.y, w: e.w, h: e.h * 0.65 }
-          : e;
+        // ラスボスは見た目に合わせた薄い判定を使う（自機弾・自機接触とも）
+        const bulletTarget = e.isFinalBoss ? finalBossHitBox(e) : e;
         for (let j = bullets.length - 1; j >= 0; j--) {
           const b = bullets[j];
           if (rectHit(bulletTarget, b)) {
