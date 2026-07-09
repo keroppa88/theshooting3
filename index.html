@@ -678,10 +678,10 @@
       // 端から端へゆったり往復する速さ（範囲が広がったので分かりやすく動く）
       const speed = 3;
 
-      // 前進時に止まる位置。見た目の前面が「手前3格子分（約100px）」を残す位置で
+      // 前進時に止まる位置。見た目の前面が「手前2格子分（約67px）」を残す位置で
       // 止め、そこは自機が安全に退避できる領域として確保する。
       // 見た目の奥行き＝h/DEPTH_SCALE。前面フィールドy＝中心cy＋見た目奥行き/2。
-      const SAFE_FRONT = 100;
+      const SAFE_FRONT = 67;
       const lungeTargetY = (FIELD_H - SAFE_FRONT) - h / 2 - h / (2 * DEPTH_SCALE);
       // 前へ出る／戻るは2秒(120フレーム)。移動量＝距離/120。
       const lungeStep = (lungeTargetY - y) / 120;
