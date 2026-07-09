@@ -862,16 +862,19 @@
       const cx = boss.x + boss.w * 0.5;
       const cy = boss.y + boss.h * 0.78;
 
-      enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx: 0, vy: speed });
+      // boss:true でラスボス弾を目立つ専用色（白／格子線が白に近い時はピンク）にする
+      enemyBullets.push({ x: cx, y: cy, w: 4, h: 10, vx: 0, vy: speed, boss: true });
       enemyBullets.push({
         x: cx, y: cy, w: 4, h: 10,
         vx: -Math.sin(angle) * speed,
-        vy:  Math.cos(angle) * speed
+        vy:  Math.cos(angle) * speed,
+        boss: true
       });
       enemyBullets.push({
         x: cx, y: cy, w: 4, h: 10,
         vx:  Math.sin(angle) * speed,
-        vy:  Math.cos(angle) * speed
+        vy:  Math.cos(angle) * speed,
+        boss: true
       });
     }
 
@@ -1688,6 +1691,18 @@
         paintSkyGradient(skyColor);
       }
       updateEnemyBulletColor(lineColor);
+      updateBossBulletColor(lineColor);
+    }
+
+    // ラスボス弾は基本「白」で目立たせる。ただし格子線が白に近い（明るく無彩色寄り）
+    // ときは白同士で埋もれるので、目立つピンクに切り替える（黄色でも可）。
+    function updateBossBulletColor(lineColor) {
+      const minC = Math.min(lineColor.r, lineColor.g, lineColor.b);
+      if (minC > 135) {
+        bossBulletMat.color.setHex(0xff3399); // 白に近い格子線 → ピンク
+      } else {
+        bossBulletMat.color.setHex(0xffffff); // 通常 → 白
+      }
     }
 
     // 敵弾の色＝格子線の逆色（補色）を明るく補正した色。
@@ -1999,6 +2014,9 @@
     // 敵弾は視認性最優先。ライティングで暗くならないMeshBasicMaterialで常時フルブライト
     // 表示し、色は毎フレームupdateCyberColorsが「格子線の逆色を明るく補正した色」に更新する
     const enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // ラスボス弾専用マテリアル。基本は白で目立たせ、格子線が白に近い時だけ
+    // ピンクに切り替える（updateBossBulletColorが毎フレーム更新）
+    const bossBulletMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     // パワーアップ★（3方向ショット／2連ショット）
     const powerStarGeo = buildStarShapeGeometry(5, 10, 4, 10);
@@ -2055,7 +2073,8 @@
       } else if (entity.hasOwnProperty("vx") && entity.h > entity.w) {
         // 弾（自機弾／敵弾は幅より高さが大きい細長い矩形）
         const isPlayerBullet = entity.vy < 0 || (entity.vy === 0 && entity.vx !== 0 && entity.w === 6);
-        mesh = new THREE.Mesh(isPlayerBullet ? playerBulletGeo : enemyBulletGeo, isPlayerBullet ? playerBulletMat : enemyBulletMat);
+        const bulletMat = isPlayerBullet ? playerBulletMat : (entity.boss ? bossBulletMat : enemyBulletMat);
+        mesh = new THREE.Mesh(isPlayerBullet ? playerBulletGeo : enemyBulletGeo, bulletMat);
       } else if (entity.hasOwnProperty("size")) {
         // パワーアップ★
         const isDouble = doubleShotStars.includes(entity);
