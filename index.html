@@ -2525,8 +2525,10 @@
       ground.visible = (clearPhase === 0);
       spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
-      applyTunnelVisible(tunnelMode && clearPhase === 0);
-      if (tunnelMode && clearPhase === 0) updateTunnel();
+      // ラスボス登場時（finalMode）は横壁・天井の格子を消す
+      const showTunnel = tunnelMode && clearPhase === 0 && !finalMode;
+      applyTunnelVisible(showTunnel);
+      if (showTunnel) updateTunnel();
       updateGroundScroll();
 
       renderer.render(scene, camera);
