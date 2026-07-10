@@ -370,6 +370,12 @@
         return;
       }
 
+      // ゲーム中にQキーで格子トンネル（デザインチェンジ）を切り替える
+      if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyQ" && !e.repeat) {
+        tunnelMode = !tunnelMode;
+        return;
+      }
+
       // コナミコマンド入力（プレイ中に受け付ける。
       // キー押しっぱなしのリピートは同じ記号が連続してしまうため無視する）
       if (gameStarted && !e.repeat && KONAMI_KEY_SYMBOLS[e.code]) {
@@ -1390,6 +1396,8 @@
       gameStarted = true;
       gameCleared = false;
 
+      tunnelMode = false; // デザインチェンジは毎ゲーム オフから
+
       finalMode = false;
       finalDelayFrames = 0;
       finalBossSpawned = false;
@@ -1587,6 +1595,86 @@
     ground.position.set(0, 0, (GROUND_NEAR_Z + SPAWN_LINE_Z) / 2);
     scene.add(ground);
 
+    // ===== デザインチェンジ：格子のトンネル（ゲーム中にQキーで切り替え） =====
+    // 地表(床)に加えて、天井と左右の壁も格子で囲む。ただし手前(カメラ付近)は高く、
+    // 奥(地平線＝敵出現ライン)へ行くほど天井・壁の高さが下がって closes していき、
+    // 最奥は「横長で隙間のほぼない一本の線」になる。敵はその線から出現する。
+    // 天井・壁とも地表と同じ大きさの格子で、奥から手前へ地表と同じくスクロールする。
+    let tunnelMode = false;
+    const TUNNEL_TILE = GROUND_W / GROUND_REPEAT_X;   // 格子1タイルのワールドサイズ（地表と同じ）
+    const WALL_X = toWorldX(FIELD_W) + 10;            // 自機移動範囲の少し外側（左は -WALL_X）
+    const TUNNEL_NEAR_Z = GROUND_NEAR_Z;              // 手前端（カメラより手前）
+    const TUNNEL_FAR_Z  = SPAWN_LINE_Z;              // 最奥＝地平線＝敵出現ライン
+    const TUNNEL_NEAR_Y = 420;                        // 手前の天井の高さ（カメラより十分上）
+    const TUNNEL_FAR_Y  = 12;                         // 最奥の高さ（ほぼ0＝横長の細い線）
+    const TUNNEL_DEPTH  = TUNNEL_NEAR_Z - TUNNEL_FAR_Z;
+
+    const HW = WALL_X;
+    const TUNNEL_SEG = 48;                 // 奥行き方向の分割数（曲線を滑らかに）
+    const tlerp = (a, b, t) => a + (b - a) * t;
+    // 天井/壁の高さプロファイル。手前(t=0)は高く、奥(t=1＝敵の線)へ曲線的に集約して
+    // 最奥はほぼ0（横長の細い線）。指数を1より大きくして「曲線的に」下げる。
+    function tunnelTopY(t) {
+      return TUNNEL_FAR_Y + (TUNNEL_NEAR_Y - TUNNEL_FAR_Y) * Math.pow(1 - t, 1.8);
+    }
+    // pos/uv 配列から板メッシュを作る（格子テクスチャ・両面）
+    function makeTunnelMesh(pos, uv) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(uv), 2));
+      const tex = buildGridLineTexture({ repeatX: 1, repeatY: 1 });
+      const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, fog: false, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.visible = false;
+      scene.add(mesh);
+      return { mesh, mat, tex };
+    }
+
+    // 天井：奥行きに沿って分割し、高さを曲線的に下げて敵の線へ集約させる。
+    // UVのv＝奥行き（手前0→奥）、u＝幅。奥行き方向(v)にスクロールする。
+    const ceilRepU = (2 * HW) / TUNNEL_TILE;
+    const ceilRepV = TUNNEL_DEPTH / TUNNEL_TILE;
+    function buildCeiling() {
+      const pos = [], uv = [];
+      for (let i = 0; i < TUNNEL_SEG; i++) {
+        const t0 = i / TUNNEL_SEG, t1 = (i + 1) / TUNNEL_SEG;
+        const z0 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t0), z1 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t1);
+        const y0 = tunnelTopY(t0), y1 = tunnelTopY(t1);
+        const v0 = t0 * ceilRepV, v1 = t1 * ceilRepV;
+        pos.push(-HW,y0,z0,  HW,y0,z0,  HW,y1,z1,  -HW,y0,z0,  HW,y1,z1,  -HW,y1,z1);
+        uv.push(0,v0,  ceilRepU,v0,  ceilRepU,v1,  0,v0,  ceilRepU,v1,  0,v1);
+      }
+      return makeTunnelMesh(pos, uv);
+    }
+    const ceiling = buildCeiling();
+    const ceilTex = ceiling.tex;
+
+    // 左右の壁：奥行きに沿って分割した台形の集合。下端は床(y=0)、上端は天井の
+    // 曲線に沿う。UVのu＝奥行き（手前0→奥）、v＝高さ（下0→上）。奥行き(u)にスクロール。
+    const wallRepU = TUNNEL_DEPTH / TUNNEL_TILE;
+    const wallRepV = TUNNEL_NEAR_Y / TUNNEL_TILE;
+    function buildWall(sign) {
+      const x = sign * HW;
+      const pos = [], uv = [];
+      for (let i = 0; i < TUNNEL_SEG; i++) {
+        const t0 = i / TUNNEL_SEG, t1 = (i + 1) / TUNNEL_SEG;
+        const z0 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t0), z1 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t1);
+        const y0 = tunnelTopY(t0), y1 = tunnelTopY(t1);
+        const u0 = t0 * wallRepU, u1 = t1 * wallRepU;
+        // 下端(y=0,v=0) → 上端(y=topY,v=wallRepV)
+        pos.push(x,0,z0,  x,0,z1,  x,y1,z1,  x,0,z0,  x,y1,z1,  x,y0,z0);
+        uv.push(u0,0,  u1,0,  u1,wallRepV,  u0,0,  u1,wallRepV,  u0,wallRepV);
+      }
+      return makeTunnelMesh(pos, uv);
+    }
+    const leftWall = buildWall(-1);
+    const rightWall = buildWall(1);
+
+    const tunnelMats = [ceiling.mat, leftWall.mat, rightWall.mat];
+    function applyTunnelVisible(v) {
+      ceiling.mesh.visible = v; leftWall.mesh.visible = v; rightWall.mesh.visible = v;
+    }
+
     // 地面の遠端（＝地平線＝敵出現ライン）が画面のどの高さに映るかを求めておく。
     // 空側の演出（モヤ・グラデーション）はこの高さを基準に描く。
     // （初回レンダリング前なのでカメラ行列を明示的に更新してから投影する）
@@ -1679,6 +1767,7 @@
       const skyColor = paletteColorAt(phase + SKY_COLOR_OFFSET);
       groundMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
+      for (const m of tunnelMats) m.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       const skyKey = skyColor.r + "," + skyColor.g + "," + skyColor.b;
       if (skyKey !== lastSkyColorKey) {
         lastSkyColorKey = skyKey;
@@ -1790,6 +1879,12 @@
       lastScrollMs = now;
       const step = GROUND_SCROLL_UV_PER_SEC * dt;
       groundMat.map.offset.y += step;
+      // トンネル（天井・左右壁）も地表と同じく奥→手前へスクロール。
+      // 天井は上下反転、左右壁は互いに鏡像なので、地表と同じ見た目の流れに
+      // なるよう符号を各面に合わせる。
+      ceilTex.offset.y += step;
+      leftWall.tex.offset.x += step;
+      rightWall.tex.offset.x += step;
       spaceScrollZ += step * (GROUND_D / GROUND_REPEAT_Y);
       updateCyberColors();
     }
@@ -2353,6 +2448,7 @@
       ground.visible = (clearPhase === 0);
       spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
+      applyTunnelVisible(tunnelMode && clearPhase === 0);
       updateGroundScroll();
 
       renderer.render(scene, camera);
@@ -2525,6 +2621,7 @@
           ground.visible = false;
           spawnGlow.visible = false;
           starPoints.visible = false;
+          applyTunnelVisible(false);
           renderer.render(scene, camera);
           drawClearFlashHud();
         } else if (clearPhase === 2) {
@@ -2534,6 +2631,7 @@
           ground.visible = false;
           spawnGlow.visible = false;
           starPoints.visible = true;
+          applyTunnelVisible(false);
           renderer.render(scene, camera);
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
@@ -2547,6 +2645,7 @@
           ground.visible = true;
           spawnGlow.visible = true;
           starPoints.visible = false;
+          applyTunnelVisible(false);
           updateGroundScroll();
           renderer.render(scene, camera);
           drawTitleHud();
