@@ -373,6 +373,7 @@
       // ゲーム中にQキーで格子トンネル（デザインチェンジ）を切り替える
       if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyQ" && !e.repeat) {
         tunnelMode = !tunnelMode;
+        if (tunnelMode) zigzagSpawnTimer = randInt(90, 150); // ONにしたら蛇行敵を早めに
         return;
       }
 
@@ -393,6 +394,8 @@
       if (gameCleared) {
         if (e.repeat) return;
         if (clearPhase === 3) {
+          // Qモード（ハードモード）でクリアした場合は勧誘画面を出さず直接タイトルへ
+          if (tunnelMode) { backToTitle(); return; }
           clearPhase = 4;
           clearFrame = 0;
         } else if (clearPhase === 4) {
@@ -1015,11 +1018,11 @@
           }
         }
 
-        if (score > 900) {
+        // Qモードは蛇行敵を早めに出し（ゲート300）、出現間隔も半分にして2倍に。
+        if (score > (tunnelMode ? 300 : 900)) {
           zigzagSpawnTimer--;
           if (zigzagSpawnTimer <= 0) {
             spawnZigzagEnemy();
-            // Qモードは蛇行敵を2倍（出現間隔を半分に）
             zigzagSpawnTimer = tunnelMode ? randInt(90, 150) : randInt(60 * 3, 60 * 5);
           }
         }
@@ -2659,6 +2662,7 @@
     function startHardMode() {
       startGame();
       tunnelMode = true;
+      zigzagSpawnTimer = randInt(90, 150); // ハードモードは蛇行敵を早めに
     }
 
     function updateClearExplosionPhase() {
@@ -2734,9 +2738,13 @@
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
           drawClearScreenHud();
-          // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ
+          // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ。
+          // ただしQモード（ハードモード）でクリアした場合は勧誘せず直接タイトルへ。
           // （キーボードはkeydownリスナー側で処理）
-          if (gamepadAnyJustPressed) { clearPhase = 4; clearFrame = 0; }
+          if (gamepadAnyJustPressed) {
+            if (tunnelMode) backToTitle();
+            else { clearPhase = 4; clearFrame = 0; }
+          }
         } else if (clearPhase === 4) {
           drawHardModePromptHud();
           // 黒画面：ゲームパッドはどのボタンでもタイトルへ（ハードモード開始はキーボードのQのみ）
