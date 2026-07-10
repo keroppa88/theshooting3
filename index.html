@@ -500,10 +500,13 @@
     }
 
     function spawnEnemy() {
+      spawnEnemyAt(Math.random() * (FIELD_W - 30), 0);
+    }
+    // Qモード編隊用：横位置x・奥行きオフセットyOffを指定して1機生成。
+    function spawnEnemyAt(x, yOff = 0) {
       const w = 30;
       const h = 30;
-      const x = Math.random() * (FIELD_W - w);
-      const y = -h;
+      const y = -h + yOff;
       const speed = 2 + Math.random() * 2;
 
       const shooterRatio = getShooterRatio(score);
@@ -531,6 +534,26 @@
       }
 
       enemies.push(e);
+    }
+
+    // Qモード時の出現パターン：ランダム単発ではなく編隊で出現させる。
+    // 3機×約120フレームごとで平均出現数は通常（1機×40フレーム）と同程度。
+    let qWaveIdx = 0;
+    function spawnQWave() {
+      const shape = qWaveIdx % 3; qWaveIdx++;
+      const m = 20;
+      const laneL = m, laneR = FIELD_W - 30 - m;
+      const lane = f => laneL + (laneR - laneL) * f;
+      if (shape === 0) {
+        // 横一列
+        spawnEnemyAt(lane(0.1), 0); spawnEnemyAt(lane(0.5), 0); spawnEnemyAt(lane(0.9), 0);
+      } else if (shape === 1) {
+        // V字（中央が前）
+        spawnEnemyAt(lane(0.5), 0); spawnEnemyAt(lane(0.2), -55); spawnEnemyAt(lane(0.8), -55);
+      } else {
+        // 斜め（奥へずらす）
+        spawnEnemyAt(lane(0.2), 0); spawnEnemyAt(lane(0.5), -45); spawnEnemyAt(lane(0.8), -90);
+      }
     }
 
     const TRAIL_COLORS = [
@@ -964,8 +987,13 @@
       if (!finalMode) {
         enemySpawnTimer--;
         if (enemySpawnTimer <= 0) {
-          spawnEnemy();
-          enemySpawnTimer = 40;
+          if (tunnelMode) {
+            spawnQWave();       // 編隊3機
+            enemySpawnTimer = 150;  // 通常敵を約2割減（120→150フレーム間隔）
+          } else {
+            spawnEnemy();
+            enemySpawnTimer = 40;
+          }
         }
 
         if (score > 500 && score < 1650) {
@@ -980,7 +1008,8 @@
           zigzagSpawnTimer--;
           if (zigzagSpawnTimer <= 0) {
             spawnZigzagEnemy();
-            zigzagSpawnTimer = randInt(60 * 3, 60 * 5);
+            // Qモードは蛇行敵を2倍（出現間隔を半分に）
+            zigzagSpawnTimer = tunnelMode ? randInt(90, 150) : randInt(60 * 3, 60 * 5);
           }
         }
       } else {
