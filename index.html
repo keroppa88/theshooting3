@@ -1687,51 +1687,42 @@
       tunnelRingGeo.attributes.position.needsUpdate = true;
     }
 
-    // (3) 色マス目：天井・左右壁のマスがランダムに黄/緑/青緑/赤へ数秒ごと。薄く光る。
-    const CELL_GLOW = [
-      [0.90, 0.82, 0.30], // 黄
-      [0.40, 0.90, 0.45], // 緑
-      [0.30, 0.82, 0.72], // 青緑
-      [0.92, 0.40, 0.40]  // 赤
+    // (3) 面の塗り：透けない不透明なベタ塗り。格子線が手前に出るよう polygonOffset で
+    //  塗り面をわずかに奥へ。左右壁は「全体が単色」で数秒ごとに色が切り替わる。
+    //  天井は地表と同じく黒（背景色）。
+    const WALL_FILL_COLORS = [
+      [0.70, 0.63, 0.28], // 黄
+      [0.34, 0.62, 0.40], // 緑
+      [0.28, 0.60, 0.55], // 青緑
+      [0.66, 0.32, 0.32]  // 赤
     ];
-    const CELL_K = 0.26; // 薄さ（濃すぎない）
-    const tunnelCellStarts = [];
-    function buildTunnelCells() {
-      const pos = [], col = [];
-      for (const { surf, sList } of TUNNEL_SURFS) {
-        for (let si = 0; si < sList.length - 1; si++) {
-          for (let j = 0; j < ND; j++) {
-            const s0 = sList[si], s1 = sList[si + 1];
-            const t0 = j / ND, t1 = (j + 1) / ND;
-            const A=tunnelPoint(surf,s0,t0), B=tunnelPoint(surf,s1,t0), C=tunnelPoint(surf,s1,t1), D=tunnelPoint(surf,s0,t1);
-            tunnelCellStarts.push(pos.length / 3);
-            pos.push(A[0],A[1],A[2], B[0],B[1],B[2], C[0],C[1],C[2],  A[0],A[1],A[2], C[0],C[1],C[2], D[0],D[1],D[2]);
-            for (let k = 0; k < 6; k++) col.push(0,0,0);
-          }
+    function buildSurfaceFill(surf, sList) {
+      const pos = [];
+      for (let si = 0; si < sList.length - 1; si++) {
+        for (let j = 0; j < ND; j++) {
+          const s0 = sList[si], s1 = sList[si + 1];
+          const t0 = j / ND, t1 = (j + 1) / ND;
+          const A=tunnelPoint(surf,s0,t0), B=tunnelPoint(surf,s1,t0), C=tunnelPoint(surf,s1,t1), D=tunnelPoint(surf,s0,t1);
+          pos.push(A[0],A[1],A[2], B[0],B[1],B[2], C[0],C[1],C[2],  A[0],A[1],A[2], C[0],C[1],C[2], D[0],D[1],D[2]);
         }
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
-      geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(col), 3));
-      const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
-      const mesh = new THREE.Mesh(geo, mat);
-      tunnelGroup.add(mesh);
-      return { mesh, geo };
+      return geo;
     }
-    const tunnelCells = buildTunnelCells();
-    function randomizeTunnelCells() {
-      const arr = tunnelCells.geo.attributes.color.array;
-      for (const base of tunnelCellStarts) {
-        let r = 0, g = 0, b = 0;
-        if (Math.random() < 0.45) {
-          const c = CELL_GLOW[(Math.random() * CELL_GLOW.length) | 0];
-          r = c[0] * CELL_K; g = c[1] * CELL_K; b = c[2] * CELL_K;
-        }
-        for (let v = 0; v < 6; v++) { const oo = (base + v) * 3; arr[oo]=r; arr[oo+1]=g; arr[oo+2]=b; }
-      }
-      tunnelCells.geo.attributes.color.needsUpdate = true;
+    const ceilFillMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const wallFillMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide, fog: false, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    tunnelGroup.add(new THREE.Mesh(buildSurfaceFill("ceil",  CEIL_S), ceilFillMat));
+    tunnelGroup.add(new THREE.Mesh(buildSurfaceFill("left",  WALL_S), wallFillMat));
+    tunnelGroup.add(new THREE.Mesh(buildSurfaceFill("right", WALL_S), wallFillMat));
+    let wallColorIdx = -1;
+    function switchWallColor() {
+      let n; do { n = (Math.random() * WALL_FILL_COLORS.length) | 0; } while (n === wallColorIdx && WALL_FILL_COLORS.length > 1);
+      wallColorIdx = n;
+      const c = WALL_FILL_COLORS[n];
+      wallFillMat.color.setRGB(c[0], c[1], c[2]);
     }
-    randomizeTunnelCells();
+    switchWallColor();
 
     // 毎フレーム更新（tunnelMode表示中に呼ぶ）
     let tunnelLastMs = performance.now();
@@ -1742,7 +1733,7 @@
       tunnelLastMs = now;
       updateTunnelRings(dt);
       tunnelCellMs += dt * 1000;
-      if (tunnelCellMs >= CELL_CHANGE_MS) { tunnelCellMs = 0; randomizeTunnelCells(); }
+      if (tunnelCellMs >= CELL_CHANGE_MS) { tunnelCellMs = 0; switchWallColor(); }
     }
     const tunnelLineMats = [tunnelLon.mat, tunnelRingMat];
 
