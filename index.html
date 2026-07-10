@@ -2323,6 +2323,15 @@
         BASE_ALT,
         toDepthZ(player.y + player.h / 2)
       );
+      // 左右移動時に機体を5度傾ける（左移動＝左に、右移動＝右に）。
+      // 直前フレームからのx移動量で向きを判定する。
+      const dx = player.x - (player._lastX ?? player.x);
+      player._lastX = player.x;
+      const TILT = 5 * Math.PI / 180;
+      let roll = 0;
+      if (dx > 0.01) roll = TILT;         // 右へ移動 → 右に傾ける（右翼が下がる）
+      else if (dx < -0.01) roll = -TILT;  // 左へ移動 → 左に傾ける（左翼が下がる）
+      playerMesh.rotation.z = roll;
     }
 
     function syncStarfieldMotion() {
