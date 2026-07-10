@@ -999,8 +999,8 @@
         enemySpawnTimer--;
         if (enemySpawnTimer <= 0) {
           if (tunnelMode) {
-            spawnQWave();       // 編隊3機
-            enemySpawnTimer = 150;  // 通常敵を約2割減（120→150フレーム間隔）
+            spawnQWave();       // 編隊3機（平均出現数は通常と同程度）
+            enemySpawnTimer = 120;
           } else {
             spawnEnemy();
             enemySpawnTimer = 40;
