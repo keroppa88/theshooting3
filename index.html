@@ -1610,70 +1610,141 @@
     const TUNNEL_DEPTH  = TUNNEL_NEAR_Z - TUNNEL_FAR_Z;
 
     const HW = WALL_X;
-    const TUNNEL_SEG = 48;                 // 奥行き方向の分割数（曲線を滑らかに）
     const tlerp = (a, b, t) => a + (b - a) * t;
     // 天井/壁の高さプロファイル。手前(t=0)は高く、奥(t=1＝敵の線)へ曲線的に集約して
-    // 最奥はほぼ0（横長の細い線）。指数を1より大きくして「曲線的に」下げる。
+    // 最奥はほぼ0（横長の細い線）。
     function tunnelTopY(t) {
       return TUNNEL_FAR_Y + (TUNNEL_NEAR_Y - TUNNEL_FAR_Y) * Math.pow(1 - t, 1.8);
     }
-    // pos/uv 配列から板メッシュを作る（格子テクスチャ・両面）
-    function makeTunnelMesh(pos, uv) {
+    // 断面内位置s(0..1)・奥行きt(0..1)から、各面のワールド座標を返す。
+    // ceil: 上面（sで左右）／left,right: 壁（sで下→上）。
+    function tunnelPoint(surf, s, t) {
+      const z = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t);
+      const ty = tunnelTopY(t);
+      if (surf === "ceil")  return [tlerp(-HW, HW, s), ty, z];
+      if (surf === "left")  return [-HW, s * ty, z];
+      return [HW, s * ty, z]; // right
+    }
+
+    const CEIL_S = [0, 0.25, 0.5, 0.75, 1.0]; // 天井の縦（奥行き方向）ライン位置
+    const WALL_S = [0, 0.34, 0.67, 1.0];      // 壁の縦（奥行き方向）ライン位置（高さ）
+    const TUNNEL_SURFS = [
+      { surf: "ceil",  sList: CEIL_S },
+      { surf: "left",  sList: WALL_S },
+      { surf: "right", sList: WALL_S }
+    ];
+    const LON_SAMPLES = 44;   // 奥行きラインの分割（滑らかさ）
+    const NR = 22;            // 移動する横リング（縦線）の本数
+    const RING_SPEED = 1.4;   // リングが手前へ流れる速さ（本/秒）
+    const ND = 10;            // 色マス目の奥行き分割数
+    const CELL_CHANGE_MS = 2500;
+
+    const tunnelGroup = new THREE.Group();
+    tunnelGroup.visible = false;
+    scene.add(tunnelGroup);
+    function applyTunnelVisible(v) { tunnelGroup.visible = v; }
+
+    // (1) 奥行きへ伸びる「縦ライン」：滑らかで静止。手前↔奥の動きはリング側で演出。
+    function buildTunnelLon() {
+      const pos = [];
+      for (const { surf, sList } of TUNNEL_SURFS) {
+        for (const s of sList) {
+          for (let i = 0; i < LON_SAMPLES; i++) {
+            const A = tunnelPoint(surf, s, i / LON_SAMPLES);
+            const B = tunnelPoint(surf, s, (i + 1) / LON_SAMPLES);
+            pos.push(A[0],A[1],A[2], B[0],B[1],B[2]);
+          }
+        }
+      }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
-      geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(uv), 2));
-      const tex = buildGridLineTexture({ repeatX: 1, repeatY: 1 });
-      const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, fog: false, side: THREE.DoubleSide });
+      const mat = new THREE.LineBasicMaterial({ color: 0xffffff, fog: false });
+      const seg = new THREE.LineSegments(geo, mat);
+      tunnelGroup.add(seg);
+      return { seg, mat };
+    }
+    const tunnelLon = buildTunnelLon();
+
+    // (2) 「横リング（縦線）」：奥→手前へ流れて動きを出す。毎フレーム位置を更新。
+    const tunnelRingGeo = new THREE.BufferGeometry();
+    tunnelRingGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(NR * 8 * 3), 3));
+    const tunnelRingMat = new THREE.LineBasicMaterial({ color: 0xffffff, fog: false });
+    const tunnelRings = new THREE.LineSegments(tunnelRingGeo, tunnelRingMat);
+    tunnelGroup.add(tunnelRings);
+    let ringPhase = 0;
+    function updateTunnelRings(dt) {
+      ringPhase += dt * RING_SPEED;
+      const arr = tunnelRingGeo.attributes.position.array;
+      let o = 0;
+      for (let k = 0; k < NR; k++) {
+        const t = (((k - ringPhase) % NR) + NR) % NR / NR;
+        const z = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t), ty = tunnelTopY(t);
+        // 断面の長方形（上・下・左・右）を線分ペアで
+        const TL=[-HW,ty,z], TR=[HW,ty,z], BL=[-HW,0,z], BR=[HW,0,z];
+        const segs=[TL,TR, BL,BR, TL,BL, TR,BR];
+        for (const p of segs) { arr[o++]=p[0]; arr[o++]=p[1]; arr[o++]=p[2]; }
+      }
+      tunnelRingGeo.attributes.position.needsUpdate = true;
+    }
+
+    // (3) 色マス目：天井・左右壁のマスがランダムに黄/緑/青緑/赤へ数秒ごと。薄く光る。
+    const CELL_GLOW = [
+      [0.90, 0.82, 0.30], // 黄
+      [0.40, 0.90, 0.45], // 緑
+      [0.30, 0.82, 0.72], // 青緑
+      [0.92, 0.40, 0.40]  // 赤
+    ];
+    const CELL_K = 0.26; // 薄さ（濃すぎない）
+    const tunnelCellStarts = [];
+    function buildTunnelCells() {
+      const pos = [], col = [];
+      for (const { surf, sList } of TUNNEL_SURFS) {
+        for (let si = 0; si < sList.length - 1; si++) {
+          for (let j = 0; j < ND; j++) {
+            const s0 = sList[si], s1 = sList[si + 1];
+            const t0 = j / ND, t1 = (j + 1) / ND;
+            const A=tunnelPoint(surf,s0,t0), B=tunnelPoint(surf,s1,t0), C=tunnelPoint(surf,s1,t1), D=tunnelPoint(surf,s0,t1);
+            tunnelCellStarts.push(pos.length / 3);
+            pos.push(A[0],A[1],A[2], B[0],B[1],B[2], C[0],C[1],C[2],  A[0],A[1],A[2], C[0],C[1],C[2], D[0],D[1],D[2]);
+            for (let k = 0; k < 6; k++) col.push(0,0,0);
+          }
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(col), 3));
+      const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.visible = false;
-      scene.add(mesh);
-      return { mesh, mat, tex };
+      tunnelGroup.add(mesh);
+      return { mesh, geo };
     }
-
-    // 天井：奥行きに沿って分割し、高さを曲線的に下げて敵の線へ集約させる。
-    // UVのv＝奥行き（手前0→奥）、u＝幅。奥行き方向(v)にスクロールする。
-    const ceilRepU = (2 * HW) / TUNNEL_TILE;
-    const ceilRepV = TUNNEL_DEPTH / TUNNEL_TILE;
-    function buildCeiling() {
-      const pos = [], uv = [];
-      for (let i = 0; i < TUNNEL_SEG; i++) {
-        const t0 = i / TUNNEL_SEG, t1 = (i + 1) / TUNNEL_SEG;
-        const z0 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t0), z1 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t1);
-        const y0 = tunnelTopY(t0), y1 = tunnelTopY(t1);
-        const v0 = t0 * ceilRepV, v1 = t1 * ceilRepV;
-        pos.push(-HW,y0,z0,  HW,y0,z0,  HW,y1,z1,  -HW,y0,z0,  HW,y1,z1,  -HW,y1,z1);
-        uv.push(0,v0,  ceilRepU,v0,  ceilRepU,v1,  0,v0,  ceilRepU,v1,  0,v1);
+    const tunnelCells = buildTunnelCells();
+    function randomizeTunnelCells() {
+      const arr = tunnelCells.geo.attributes.color.array;
+      for (const base of tunnelCellStarts) {
+        let r = 0, g = 0, b = 0;
+        if (Math.random() < 0.45) {
+          const c = CELL_GLOW[(Math.random() * CELL_GLOW.length) | 0];
+          r = c[0] * CELL_K; g = c[1] * CELL_K; b = c[2] * CELL_K;
+        }
+        for (let v = 0; v < 6; v++) { const oo = (base + v) * 3; arr[oo]=r; arr[oo+1]=g; arr[oo+2]=b; }
       }
-      return makeTunnelMesh(pos, uv);
+      tunnelCells.geo.attributes.color.needsUpdate = true;
     }
-    const ceiling = buildCeiling();
-    const ceilTex = ceiling.tex;
+    randomizeTunnelCells();
 
-    // 左右の壁：奥行きに沿って分割した台形の集合。下端は床(y=0)、上端は天井の
-    // 曲線に沿う。UVのu＝奥行き（手前0→奥）、v＝高さ（下0→上）。奥行き(u)にスクロール。
-    const wallRepU = TUNNEL_DEPTH / TUNNEL_TILE;
-    const wallRepV = TUNNEL_NEAR_Y / TUNNEL_TILE;
-    function buildWall(sign) {
-      const x = sign * HW;
-      const pos = [], uv = [];
-      for (let i = 0; i < TUNNEL_SEG; i++) {
-        const t0 = i / TUNNEL_SEG, t1 = (i + 1) / TUNNEL_SEG;
-        const z0 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t0), z1 = tlerp(TUNNEL_NEAR_Z, TUNNEL_FAR_Z, t1);
-        const y0 = tunnelTopY(t0), y1 = tunnelTopY(t1);
-        const u0 = t0 * wallRepU, u1 = t1 * wallRepU;
-        // 下端(y=0,v=0) → 上端(y=topY,v=wallRepV)
-        pos.push(x,0,z0,  x,0,z1,  x,y1,z1,  x,0,z0,  x,y1,z1,  x,y0,z0);
-        uv.push(u0,0,  u1,0,  u1,wallRepV,  u0,0,  u1,wallRepV,  u0,wallRepV);
-      }
-      return makeTunnelMesh(pos, uv);
+    // 毎フレーム更新（tunnelMode表示中に呼ぶ）
+    let tunnelLastMs = performance.now();
+    let tunnelCellMs = 0;
+    function updateTunnel() {
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - tunnelLastMs) / 1000);
+      tunnelLastMs = now;
+      updateTunnelRings(dt);
+      tunnelCellMs += dt * 1000;
+      if (tunnelCellMs >= CELL_CHANGE_MS) { tunnelCellMs = 0; randomizeTunnelCells(); }
     }
-    const leftWall = buildWall(-1);
-    const rightWall = buildWall(1);
-
-    const tunnelMats = [ceiling.mat, leftWall.mat, rightWall.mat];
-    function applyTunnelVisible(v) {
-      ceiling.mesh.visible = v; leftWall.mesh.visible = v; rightWall.mesh.visible = v;
-    }
+    const tunnelLineMats = [tunnelLon.mat, tunnelRingMat];
 
     // 地面の遠端（＝地平線＝敵出現ライン）が画面のどの高さに映るかを求めておく。
     // 空側の演出（モヤ・グラデーション）はこの高さを基準に描く。
@@ -1767,7 +1838,7 @@
       const skyColor = paletteColorAt(phase + SKY_COLOR_OFFSET);
       groundMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
-      for (const m of tunnelMats) m.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
+      for (const m of tunnelLineMats) m.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       const skyKey = skyColor.r + "," + skyColor.g + "," + skyColor.b;
       if (skyKey !== lastSkyColorKey) {
         lastSkyColorKey = skyKey;
@@ -1879,12 +1950,6 @@
       lastScrollMs = now;
       const step = GROUND_SCROLL_UV_PER_SEC * dt;
       groundMat.map.offset.y += step;
-      // トンネル（天井・左右壁）も地表と同じく奥→手前へスクロール。
-      // 天井は上下反転、左右壁は互いに鏡像なので、地表と同じ見た目の流れに
-      // なるよう符号を各面に合わせる。
-      ceilTex.offset.y += step;
-      leftWall.tex.offset.x += step;
-      rightWall.tex.offset.x += step;
       spaceScrollZ += step * (GROUND_D / GROUND_REPEAT_Y);
       updateCyberColors();
     }
@@ -2449,6 +2514,7 @@
       spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
       applyTunnelVisible(tunnelMode && clearPhase === 0);
+      if (tunnelMode && clearPhase === 0) updateTunnel();
       updateGroundScroll();
 
       renderer.render(scene, camera);
