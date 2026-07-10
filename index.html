@@ -1018,8 +1018,8 @@
           }
         }
 
-        // Qモードは蛇行敵を早めに出し（ゲート300）、出現間隔も半分にして2倍に。
-        if (score > (tunnelMode ? 300 : 900)) {
+        // Qモードは蛇行敵を300点から出し、出現間隔も半分にして2倍に。
+        if (tunnelMode ? (score >= 300) : (score > 900)) {
           zigzagSpawnTimer--;
           if (zigzagSpawnTimer <= 0) {
             spawnZigzagEnemy();
