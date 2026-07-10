@@ -387,9 +387,20 @@
         return;
       }
 
-      // クリア画像の表示中はどのキーでもタイトルへ戻る
+      // クリア後の画面遷移：
+      //  clearPhase 3（クリア画像）→ 何かキーで clearPhase 4（ハードモード案内の黒画面）
+      //  clearPhase 4（黒画面）→ Qでハードモード開始、それ以外はタイトルへ
       if (gameCleared) {
-        backToTitle();
+        if (e.repeat) return;
+        if (clearPhase === 3) {
+          clearPhase = 4;
+          clearFrame = 0;
+        } else if (clearPhase === 4) {
+          if (e.code === "KeyQ") startHardMode();
+          else backToTitle();
+        } else {
+          backToTitle();
+        }
       }
     });
 
@@ -2630,6 +2641,24 @@
       }
     }
 
+    // クリア後の「ハードモード案内」黒画面（英語・白文字）
+    function drawHardModePromptHud() {
+      hctx.fillStyle = "#000";
+      hctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      hctx.fillStyle = "#ffffff";
+      hctx.textAlign = "center";
+      hctx.font = "20px monospace";
+      hctx.fillText("TO TAKE ON A SLIGHTLY HARDER MODE,", CANVAS_W / 2, CANVAS_H / 2 - 12);
+      hctx.fillText("PRESS THE Q BUTTON", CANVAS_W / 2, CANVAS_H / 2 + 22);
+      hctx.textAlign = "left";
+    }
+
+    // ハードモード＝Qモード（格子トンネル）で開始
+    function startHardMode() {
+      startGame();
+      tunnelMode = true;
+    }
+
     function updateClearExplosionPhase() {
       clearFrame++;
       updateFinalBigExplosion();
@@ -2703,8 +2732,12 @@
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
           drawClearScreenHud();
-          // クリア画像の表示中はゲームパッドのどのボタンでもタイトルへ戻る
+          // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ
           // （キーボードはkeydownリスナー側で処理）
+          if (gamepadAnyJustPressed) { clearPhase = 4; clearFrame = 0; }
+        } else if (clearPhase === 4) {
+          drawHardModePromptHud();
+          // 黒画面：ゲームパッドはどのボタンでもタイトルへ（ハードモード開始はキーボードのQのみ）
           if (gamepadAnyJustPressed) backToTitle();
         } else if (!gameStarted) {
           syncPlayerMesh();
