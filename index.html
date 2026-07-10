@@ -1636,8 +1636,7 @@
     const LON_SAMPLES = 44;   // 奥行きラインの分割（滑らかさ）
     const NR = 22;            // 移動する横リング（縦線）の本数
     const RING_SPEED = 1.4;   // リングが手前へ流れる速さ（本/秒）
-    const ND = 10;            // 色マス目の奥行き分割数
-    const CELL_CHANGE_MS = 2500;
+    const ND = 10;            // 塗り面の奥行き分割数
 
     const tunnelGroup = new THREE.Group();
     tunnelGroup.visible = false;
@@ -1688,14 +1687,7 @@
     }
 
     // (3) 面の塗り：透けない不透明なベタ塗り。格子線が手前に出るよう polygonOffset で
-    //  塗り面をわずかに奥へ。左右壁は「全体が単色」で数秒ごとに色が切り替わる。
-    //  天井は地表と同じく黒（背景色）。
-    const WALL_FILL_COLORS = [
-      [0.70, 0.63, 0.28], // 黄
-      [0.34, 0.62, 0.40], // 緑
-      [0.28, 0.60, 0.55], // 青緑
-      [0.66, 0.32, 0.32]  // 赤
-    ];
+    //  塗り面をわずかに奥へ。天井・左右壁とも地表と同じく黒（背景色）。
     function buildSurfaceFill(surf, sList) {
       const pos = [];
       for (let si = 0; si < sList.length - 1; si++) {
@@ -1715,25 +1707,14 @@
     tunnelGroup.add(new THREE.Mesh(buildSurfaceFill("ceil",  CEIL_S), ceilFillMat));
     tunnelGroup.add(new THREE.Mesh(buildSurfaceFill("left",  WALL_S), wallFillMat));
     tunnelGroup.add(new THREE.Mesh(buildSurfaceFill("right", WALL_S), wallFillMat));
-    let wallColorIdx = -1;
-    function switchWallColor() {
-      let n; do { n = (Math.random() * WALL_FILL_COLORS.length) | 0; } while (n === wallColorIdx && WALL_FILL_COLORS.length > 1);
-      wallColorIdx = n;
-      const c = WALL_FILL_COLORS[n];
-      wallFillMat.color.setRGB(c[0], c[1], c[2]);
-    }
-    switchWallColor();
 
     // 毎フレーム更新（tunnelMode表示中に呼ぶ）
     let tunnelLastMs = performance.now();
-    let tunnelCellMs = 0;
     function updateTunnel() {
       const now = performance.now();
       const dt = Math.min(0.1, (now - tunnelLastMs) / 1000);
       tunnelLastMs = now;
       updateTunnelRings(dt);
-      tunnelCellMs += dt * 1000;
-      if (tunnelCellMs >= CELL_CHANGE_MS) { tunnelCellMs = 0; switchWallColor(); }
     }
     const tunnelLineMats = [tunnelLon.mat, tunnelRingMat];
 
