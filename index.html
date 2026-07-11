@@ -721,15 +721,16 @@
       // 端から端へゆったり往復する速さ（範囲が広がったので分かりやすく動く）
       const speed = 3;
 
-      // 前進時に止まる位置。見た目の前面が「手前2格子分（約67px）」を残す位置で
-      // 止め、そこは自機が安全に退避できる領域として確保する。
-      // 見た目の奥行き＝h/DEPTH_SCALE。前面フィールドy＝中心cy＋見た目奥行き/2。
-      const SAFE_FRONT = 67;
-      const lungeTargetY = (FIELD_H - SAFE_FRONT) - h / 2 - h / (2 * DEPTH_SCALE);
       // Qモード（ハードモード）のラスボスは専用の10秒サイクルで動く。
       //  patrol 6秒（左右往復・3秒目と4秒目に3方向弾）→ 前へ1秒 → 滞在2秒 → 戻る1秒。
       // 通常は patrol 8秒 → 前へ2秒 → 滞在1秒 → 戻る2秒。
       const qBoss = tunnelMode;
+      // 前進時に止まる位置。通常は見た目の前面が「手前2格子分（約67px）」を残す位置で
+      // 止め、そこは自機が安全に退避できる領域として確保する。
+      // Qモードは最前面（画面の一番手前）まで出てくる（退避領域なし）。
+      // 見た目の奥行き＝h/DEPTH_SCALE。前面フィールドy＝中心cy＋見た目奥行き/2。
+      const SAFE_FRONT = qBoss ? 0 : 67;
+      const lungeTargetY = (FIELD_H - SAFE_FRONT) - h / 2 - h / (2 * DEPTH_SCALE);
       const lungeDur = qBoss ? 60 : 120;       // 前進／後退にかける時間
       const lungeStep = (lungeTargetY - y) / lungeDur;
 
@@ -1234,7 +1235,8 @@
         }
 
         // 超初心者無敵モード中は敵と接触しても死なない（当たり判定なし）
-        const playerTarget = e.isFinalBoss ? finalBossHitBox(e) : e;
+        // ボス（中ボス・ラスボス）は見た目に合わせた薄い判定
+        const playerTarget = e.isBoss ? bossHitBox(e) : e;
         if (!superBeginnerMode && rectHit(player, playerTarget)) {
           if (!gameOver && !demoMode) consecutiveGameOvers++;
           gameOver = true;
@@ -1288,13 +1290,13 @@
       }
     }
 
-    // ラスボスの当たり判定を「見た目のモデル」に合わせた箱にする。
+    // ボス（中ボス・ラスボス）の当たり判定を「見た目のモデル」に合わせた箱にする。
     // フィールドのy(奥行き)は3D空間ではDEPTH_SCALE倍に引き伸ばされるため、
-    // 箱のh(=240)をそのまま判定に使うと、見た目より約3.4倍も奥行きの深い
+    // 箱のhをそのまま判定に使うと、見た目より約3.4倍も奥行きの深い
     // 判定になり、機体が見た目で届く前に自機がやられたり、自機弾が機体の
     // ずっと手前で消えたりする。見た目の奥行き(h/DEPTH_SCALE)に合わせた
     // 薄い箱を機体中心に置くことで、見た目と判定を一致させる。
-    function finalBossHitBox(e) {
+    function bossHitBox(e) {
       const cy = e.y + e.h / 2;
       const depth = e.h / DEPTH_SCALE; // 見た目の奥行き（フィールドy換算）
       return { x: e.x, y: cy - depth / 2, w: e.w, h: depth };
@@ -1303,8 +1305,8 @@
     function handleCollisions() {
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
-        // ラスボスは見た目に合わせた薄い判定を使う（自機弾・自機接触とも）
-        const bulletTarget = e.isFinalBoss ? finalBossHitBox(e) : e;
+        // ボス（中ボス・ラスボス）は見た目に合わせた薄い判定を使う（自機弾・自機接触とも）
+        const bulletTarget = e.isBoss ? bossHitBox(e) : e;
         for (let j = bullets.length - 1; j >= 0; j--) {
           const b = bullets[j];
           if (rectHit(bulletTarget, b)) {
