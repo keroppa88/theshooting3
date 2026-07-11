@@ -231,45 +231,12 @@
     const starSpawned    = {};
     const doubleShotStarSpawned = {};
 
-    // ===== 超初心者無敵モード（コナミコマンド：上上下下左右左右BA） =====
+    // ===== 超初心者無敵モード（キーボードのWキーで切り替え） =====
     // 発動すると自機の当たり判定が無くなり、弾に当たっても敵に当たっても死なない。
     // 敵・ミサイル・壁・敵の動きはすべて通常どおり（無敵になるだけ）。
-    // 無敵中にもう一度コマンドを入力すると解除（トグル式）。
+    // 無敵中にもう一度Wを押すと解除（トグル式）。
     let superBeginnerMode = false;
-    let consecutiveGameOvers = 0; // クリアでリセット。2以上でゲームオーバー画面にコマンドのヒントを出す
-    const KONAMI_SEQ = ["U", "U", "D", "D", "L", "R", "L", "R", "B", "A"];
-    let konamiProgress = 0;
-    function feedKonami(sym) {
-      if (sym === KONAMI_SEQ[konamiProgress]) {
-        konamiProgress++;
-        if (konamiProgress >= KONAMI_SEQ.length) {
-          konamiProgress = 0;
-          superBeginnerMode = !superBeginnerMode;
-        }
-      } else {
-        // 途中で崩れたら最初から。ただし入力が先頭記号（上）なら進行1として仕切り直す
-        konamiProgress = (sym === KONAMI_SEQ[0]) ? 1 : 0;
-      }
-    }
-    const KONAMI_KEY_SYMBOLS = {
-      ArrowUp: "U", ArrowDown: "D", ArrowLeft: "L", ArrowRight: "R",
-      KeyB: "B", KeyA: "A"
-    };
-    // ゲームパッド用：十字キー12/13/14/15、B=ボタン1、A=ボタン0 の押した瞬間だけ拾う
-    const KONAMI_PAD_BUTTONS = [
-      { idx: 12, sym: "U" }, { idx: 13, sym: "D" },
-      { idx: 14, sym: "L" }, { idx: 15, sym: "R" },
-      { idx: 1,  sym: "B" }, { idx: 0,  sym: "A" }
-    ];
-    let prevKonamiPadPressed = {};
-    function pollKonamiGamepad(gp) {
-      if (!gp || !gp.buttons) { prevKonamiPadPressed = {}; return; }
-      for (const { idx, sym } of KONAMI_PAD_BUTTONS) {
-        const pressed = !!(gp.buttons[idx] && gp.buttons[idx].pressed);
-        if (pressed && !prevKonamiPadPressed[idx]) feedKonami(sym);
-        prevKonamiPadPressed[idx] = pressed;
-      }
-    }
+    let consecutiveGameOvers = 0; // クリアでリセット。2以上でゲームオーバー画面にヒントを出す
 
     // ===== デモプレイ（タイトル画面を5秒放置で開始） =====
     // 自機をAIが操作するデモ画面。何かのキー／ゲームパッドのボタン／
@@ -377,10 +344,10 @@
         return;
       }
 
-      // コナミコマンド入力（プレイ中に受け付ける。
-      // キー押しっぱなしのリピートは同じ記号が連続してしまうため無視する）
-      if (gameStarted && !e.repeat && KONAMI_KEY_SYMBOLS[e.code]) {
-        feedKonami(KONAMI_KEY_SYMBOLS[e.code]);
+      // ゲーム中にWキーで超初心者無敵モードを切り替える（もう一度押すと解除）
+      if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyW" && !e.repeat) {
+        superBeginnerMode = !superBeginnerMode;
+        return;
       }
 
       if (!gameStarted && clearPhase === 0 && !gameCleared) {
@@ -956,7 +923,8 @@
     function updatePlayer() {
       if (keys["ArrowLeft"]  || keys["KeyA"]) player.x -= player.speed;
       if (keys["ArrowRight"] || keys["KeyD"]) player.x += player.speed;
-      if (keys["ArrowUp"]    || keys["KeyW"]) player.y -= player.speed;
+      // Wは超初心者無敵モードの切り替えに使うため、上移動は矢印キーのみ
+      if (keys["ArrowUp"])                    player.y -= player.speed;
       if (keys["ArrowDown"]  || keys["KeyS"]) player.y += player.speed;
 
       const pad = readGamepad();
@@ -2681,7 +2649,7 @@
         // 2回連続でゲームオーバーになったら救済コマンドを教える
         hctx.fillStyle = "#ffd24a";
         hctx.font = "14px sans-serif";
-        hctx.fillText("超初心者無敵モード：上上下下左右左右BA", CANVAS_W / 2, CANVAS_H / 2 + 58);
+        hctx.fillText("超初心者無敵モード：ゲーム中に W キー", CANVAS_W / 2, CANVAS_H / 2 + 58);
       }
       hctx.textAlign = "left";
     }
@@ -2783,7 +2751,6 @@
       try {
         const pads = navigator.getGamepads ? navigator.getGamepads() : [];
         const pad0 = (activeGamepadIndex != null) ? pads[activeGamepadIndex] : pads[0];
-        pollKonamiGamepad(pad0);
         // ボタンの押下状態を更新する（gamepadAnyJustPressed をこの中で毎フレーム更新）
         isGamepadRestartJustPressed(pad0);
 
