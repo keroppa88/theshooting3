@@ -373,6 +373,7 @@
       // ゲーム中にQキーで格子トンネル（デザインチェンジ）を切り替える
       if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyQ" && !e.repeat) {
         tunnelMode = !tunnelMode;
+        if (tunnelMode) zigzagSpawnTimer = randInt(90, 150); // ONにしたら蛇行敵を早めに
         return;
       }
 
@@ -393,6 +394,8 @@
       if (gameCleared) {
         if (e.repeat) return;
         if (clearPhase === 3) {
+          // Qモード（ハードモード）でクリアした場合は勧誘画面を出さず直接タイトルへ
+          if (tunnelMode) { backToTitle(); return; }
           clearPhase = 4;
           clearFrame = 0;
         } else if (clearPhase === 4) {
@@ -723,8 +726,12 @@
       // 見た目の奥行き＝h/DEPTH_SCALE。前面フィールドy＝中心cy＋見た目奥行き/2。
       const SAFE_FRONT = 67;
       const lungeTargetY = (FIELD_H - SAFE_FRONT) - h / 2 - h / (2 * DEPTH_SCALE);
-      // 前へ出る／戻るは2秒(120フレーム)。移動量＝距離/120。
-      const lungeStep = (lungeTargetY - y) / 120;
+      // Qモード（ハードモード）のラスボスは専用の10秒サイクルで動く。
+      //  patrol 6秒（左右往復・3秒目と4秒目に3方向弾）→ 前へ1秒 → 滞在2秒 → 戻る1秒。
+      // 通常は patrol 8秒 → 前へ2秒 → 滞在1秒 → 戻る2秒。
+      const qBoss = tunnelMode;
+      const lungeDur = qBoss ? 60 : 120;       // 前進／後退にかける時間
+      const lungeStep = (lungeTargetY - y) / lungeDur;
 
       enemies.push({
         x, y, w, h, speed,
@@ -735,15 +742,15 @@
         hp: 130,
         moveDir: 1,
         shotTimer: 120,
+        qBoss,
         // ===== 前進ラッシュ（ランジ）の状態 =====
-        // 定位置で8秒間、左右に往復しながら3方向弾 → 2秒かけて前へ → 1秒とどまる
-        //（低速の3方向弾）→ 2秒かけて後ろへ戻る、をループ。
         homeY: y,
         lungeTargetY,
         lungeStep,
+        lungeDur,
         lungePhase: "patrol",   // patrol → lungeOut → lungeHold → lungeBack → patrol
-        phaseTimer: 60 * 8,     // 各フェーズの残りフレーム（patrolは8秒）
-        lungeHoldShotTimer: 0   // 前へ出た位置での発射間隔
+        phaseTimer: qBoss ? 60 * 6 : 60 * 8,   // patrolの長さ（Q=6秒／通常=8秒）
+        lungeHoldShotTimer: 0   // 前へ出た位置での発射間隔（通常のみ）
       });
     }
 
@@ -917,6 +924,33 @@
       });
     }
 
+    // Qモード（ハードモード）ラスボスの10秒サイクル：
+    //  1〜6秒：左右に往復（3秒目・4秒目に3方向弾）／7秒目：前へ移動／
+    //  8〜9秒：前に滞在／10秒目：元の位置へ戻る、をループ。
+    function updateQFinalBoss(e) {
+      if (e.lungePhase === "patrol") {
+        e.x += e.moveDir * e.speed;
+        if (e.x < 0) { e.x = 0; e.moveDir = 1; }
+        else if (e.x + e.w > FIELD_W) { e.x = FIELD_W - e.w; e.moveDir = -1; }
+        const elapsed = 60 * 6 - e.phaseTimer;   // patrol開始からの経過フレーム
+        if (elapsed === 60 * 3 || elapsed === 60 * 4) fireFinalBossBullets(e);
+        e.phaseTimer--;
+        if (e.phaseTimer <= 0) { e.lungePhase = "lungeOut"; e.phaseTimer = e.lungeDur; } // 7秒目：1秒で前へ
+      } else if (e.lungePhase === "lungeOut") {
+        e.y += e.lungeStep;
+        e.phaseTimer--;
+        if (e.phaseTimer <= 0) { e.y = e.lungeTargetY; e.lungePhase = "lungeHold"; e.phaseTimer = 60 * 2; } // 8〜9秒：2秒滞在
+      } else if (e.lungePhase === "lungeHold") {
+        // 前に滞在（発射なし）
+        e.phaseTimer--;
+        if (e.phaseTimer <= 0) { e.lungePhase = "lungeBack"; e.phaseTimer = e.lungeDur; } // 10秒目：1秒で戻る
+      } else {
+        e.y -= e.lungeStep;
+        e.phaseTimer--;
+        if (e.phaseTimer <= 0) { e.y = e.homeY; e.lungePhase = "patrol"; e.phaseTimer = 60 * 6; }
+      }
+    }
+
     // ===== 更新 =====
     function updatePlayer() {
       if (keys["ArrowLeft"]  || keys["KeyA"]) player.x -= player.speed;
@@ -999,8 +1033,8 @@
         enemySpawnTimer--;
         if (enemySpawnTimer <= 0) {
           if (tunnelMode) {
-            spawnQWave();       // 編隊3機
-            enemySpawnTimer = 150;  // 通常敵を約2割減（120→150フレーム間隔）
+            spawnQWave();       // 編隊3機（平均出現数は通常と同程度）
+            enemySpawnTimer = 120;
           } else {
             spawnEnemy();
             enemySpawnTimer = 40;
@@ -1015,11 +1049,11 @@
           }
         }
 
-        if (score > 900) {
+        // Qモードは蛇行敵を300点から出し、出現間隔も半分にして2倍に。
+        if (tunnelMode ? (score >= 300) : (score > 900)) {
           zigzagSpawnTimer--;
           if (zigzagSpawnTimer <= 0) {
             spawnZigzagEnemy();
-            // Qモードは蛇行敵を2倍（出現間隔を半分に）
             zigzagSpawnTimer = tunnelMode ? randInt(90, 150) : randInt(60 * 3, 60 * 5);
           }
         }
@@ -1110,6 +1144,8 @@
             enemies.splice(i, 1);
             continue;
           }
+        } else if (e.isFinalBoss && e.qBoss) {
+          updateQFinalBoss(e);
         } else if (e.isFinalBoss) {
           if (e.lungePhase === "patrol") {
             // 8秒間、左右（端から端）に往復しながら3方向の弾を発射
@@ -2525,8 +2561,10 @@
       ground.visible = (clearPhase === 0);
       spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
-      applyTunnelVisible(tunnelMode && clearPhase === 0);
-      if (tunnelMode && clearPhase === 0) updateTunnel();
+      // ラスボス登場時（finalMode）は横壁・天井の格子を消す
+      const showTunnel = tunnelMode && clearPhase === 0 && !finalMode;
+      applyTunnelVisible(showTunnel);
+      if (showTunnel) updateTunnel();
       updateGroundScroll();
 
       renderer.render(scene, camera);
@@ -2657,6 +2695,7 @@
     function startHardMode() {
       startGame();
       tunnelMode = true;
+      zigzagSpawnTimer = randInt(90, 150); // ハードモードは蛇行敵を早めに
     }
 
     function updateClearExplosionPhase() {
@@ -2732,9 +2771,13 @@
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
           drawClearScreenHud();
-          // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ
+          // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ。
+          // ただしQモード（ハードモード）でクリアした場合は勧誘せず直接タイトルへ。
           // （キーボードはkeydownリスナー側で処理）
-          if (gamepadAnyJustPressed) { clearPhase = 4; clearFrame = 0; }
+          if (gamepadAnyJustPressed) {
+            if (tunnelMode) backToTitle();
+            else { clearPhase = 4; clearFrame = 0; }
+          }
         } else if (clearPhase === 4) {
           drawHardModePromptHud();
           // 黒画面：ゲームパッドはどのボタンでもタイトルへ（ハードモード開始はキーボードのQのみ）
