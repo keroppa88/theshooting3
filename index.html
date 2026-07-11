@@ -231,10 +231,10 @@
     const starSpawned    = {};
     const doubleShotStarSpawned = {};
 
-    // ===== 超初心者無敵モード（キーボードのWキーで切り替え） =====
+    // ===== 超初心者無敵モード（キーボードのZキーで切り替え） =====
     // 発動すると自機の当たり判定が無くなり、弾に当たっても敵に当たっても死なない。
     // 敵・ミサイル・壁・敵の動きはすべて通常どおり（無敵になるだけ）。
-    // 無敵中にもう一度Wを押すと解除（トグル式）。
+    // 無敵中にもう一度Zを押すと解除（トグル式）。
     let superBeginnerMode = false;
     let consecutiveGameOvers = 0; // クリアでリセット。2以上でゲームオーバー画面にヒントを出す
 
@@ -344,8 +344,8 @@
         return;
       }
 
-      // ゲーム中にWキーで超初心者無敵モードを切り替える（もう一度押すと解除）
-      if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyW" && !e.repeat) {
+      // ゲーム中にZキーで超初心者無敵モードを切り替える（もう一度押すと解除）
+      if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyZ" && !e.repeat) {
         superBeginnerMode = !superBeginnerMode;
         return;
       }
@@ -923,8 +923,7 @@
     function updatePlayer() {
       if (keys["ArrowLeft"]  || keys["KeyA"]) player.x -= player.speed;
       if (keys["ArrowRight"] || keys["KeyD"]) player.x += player.speed;
-      // Wは超初心者無敵モードの切り替えに使うため、上移動は矢印キーのみ
-      if (keys["ArrowUp"])                    player.y -= player.speed;
+      if (keys["ArrowUp"]    || keys["KeyW"]) player.y -= player.speed;
       if (keys["ArrowDown"]  || keys["KeyS"]) player.y += player.speed;
 
       const pad = readGamepad();
@@ -2649,7 +2648,7 @@
         // 2回連続でゲームオーバーになったら救済コマンドを教える
         hctx.fillStyle = "#ffd24a";
         hctx.font = "14px sans-serif";
-        hctx.fillText("超初心者無敵モード：ゲーム中に W キー", CANVAS_W / 2, CANVAS_H / 2 + 58);
+        hctx.fillText("超初心者無敵モード：ゲーム中に Z キー", CANVAS_W / 2, CANVAS_H / 2 + 58);
       }
       hctx.textAlign = "left";
     }
