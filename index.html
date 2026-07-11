@@ -2596,8 +2596,11 @@
       ground.visible = (clearPhase === 0);
       spawnGlow.visible = (clearPhase === 0);
       starPoints.visible = false;
-      // ラスボス登場時（finalMode）は横壁・天井の格子を消す
-      const showTunnel = tunnelMode && clearPhase === 0 && !finalMode;
+      // ラスボスが出る直前に横壁・天井の格子を消す。
+      // finalMode開始（1800点超え）直後はまだ中ボス戦などが続いているので格子は残し、
+      // ラスボス出現までのディレイ終盤（残り3秒）＝空白時間に入ってから排除する。
+      const bossImminent = finalMode && (finalBossSpawned || finalDelayFrames <= 60 * 3);
+      const showTunnel = tunnelMode && clearPhase === 0 && !bossImminent;
       applyTunnelVisible(showTunnel);
       if (showTunnel) updateTunnel();
       updateGroundScroll();
