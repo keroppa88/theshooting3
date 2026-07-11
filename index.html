@@ -234,7 +234,7 @@
     // ===== 超初心者無敵モード（コナミコマンド：上上下下左右左右BA） =====
     // 発動すると自機の当たり判定が無くなり、弾に当たっても敵に当たっても死なない。
     // 敵・ミサイル・壁・敵の動きはすべて通常どおり（無敵になるだけ）。
-    // ページを再読み込みするまで有効。
+    // 無敵中にもう一度コマンドを入力すると解除（トグル式）。
     let superBeginnerMode = false;
     let consecutiveGameOvers = 0; // クリアでリセット。2以上でゲームオーバー画面にコマンドのヒントを出す
     const KONAMI_SEQ = ["U", "U", "D", "D", "L", "R", "L", "R", "B", "A"];
@@ -244,7 +244,7 @@
         konamiProgress++;
         if (konamiProgress >= KONAMI_SEQ.length) {
           konamiProgress = 0;
-          superBeginnerMode = true;
+          superBeginnerMode = !superBeginnerMode;
         }
       } else {
         // 途中で崩れたら最初から。ただし入力が先頭記号（上）なら進行1として仕切り直す
