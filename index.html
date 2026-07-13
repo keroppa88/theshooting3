@@ -453,6 +453,10 @@
     // タッチ主体端末（pointer: coarse）かどうかは、スマホ用レイアウトと
     // 描画負荷を落とす判定に使う。
     const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+    const MOBILE_RENDER_SCALE = 0.5;
+    const MOBILE_RENDER_FPS = 50;
+    const TRAIL_LIFE_FRAMES = isTouchDevice ? 120 : 240;
+    const TRAIL_MAX_POINTS = isTouchDevice ? 130 : 260;
 
     // スマホでは横向き専用の操作UIを表示する（CSSの body.mobile-fit）
     if (isTouchDevice) document.body.classList.add("mobile-fit");
@@ -1186,7 +1190,7 @@
         if (e.type === "trail_enemy") {
           e.y += e.speed;
 
-          e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: 240 });
+          e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: TRAIL_LIFE_FRAMES });
           for (let tt = e.trail.length - 1; tt >= 0; tt--) {
             e.trail[tt].life--;
             if (e.trail[tt].life <= 0) e.trail.splice(tt, 1);
@@ -1243,12 +1247,12 @@
           e.y += e.speed;
 
           if (Array.isArray(e.trail)) {
-            e.trail.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, life: 240 });
+            e.trail.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, life: TRAIL_LIFE_FRAMES });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
               if (e.trail[t].life <= 0) e.trail.splice(t, 1);
             }
-            if (e.trail.length > 260) e.trail.splice(0, e.trail.length - 260);
+            if (e.trail.length > TRAIL_MAX_POINTS) e.trail.splice(0, e.trail.length - TRAIL_MAX_POINTS);
           }
 
           if (e.y > FIELD_H) {
@@ -1310,12 +1314,12 @@
         } else {
           e.y += e.speed;
           if (!e.isBoss && !e.isFinalBoss && !e.isMissile && Array.isArray(e.trail)) {
-            e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: 240 });
+            e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: TRAIL_LIFE_FRAMES });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
               if (e.trail[t].life <= 0) e.trail.splice(t, 1);
             }
-            if (e.trail.length > 260) e.trail.splice(0, e.trail.length - 260);
+            if (e.trail.length > TRAIL_MAX_POINTS) e.trail.splice(0, e.trail.length - TRAIL_MAX_POINTS);
           }
 
           if (e.y > FIELD_H) {
@@ -1650,13 +1654,35 @@
 
     const webglCanvas = document.getElementById("webgl");
     // スマホはGPUが弱く、高解像度＋アンチエイリアスだと処理落ちして動きが重くなる。
-    // タッチ端末では描画解像度を等倍(760×640)に抑え、MSAAも切る
-    // （小さい画面に縮小表示されるため見た目の差はほぼ出ない）。
+    // タッチ端末ではWebGL描画解像度を50%に抑え、MSAAも切る。
+    // HUDは従来解像度のままなので文字の読みやすさは維持する。
     const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: !isTouchDevice });
-    renderer.setSize(CANVAS_W, CANVAS_H, false);
+    renderer.setSize(
+      isTouchDevice ? Math.round(CANVAS_W * MOBILE_RENDER_SCALE) : CANVAS_W,
+      isTouchDevice ? Math.round(CANVAS_H * MOBILE_RENDER_SCALE) : CANVAS_H,
+      false
+    );
     renderer.setPixelRatio(isTouchDevice ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = ENABLE_SHADOWS;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    // ゲームロジックは従来どおり更新し、スマホだけ3DのGPU描画を50fpsに制限する。
+    // 60Hz画面では6フレーム中5フレームを描く配分になり、速度や当たり判定は変わらない。
+    const MOBILE_RENDER_INTERVAL_MS = 1000 / MOBILE_RENDER_FPS;
+    let nextMobileRenderMs = performance.now() + MOBILE_RENDER_INTERVAL_MS;
+    function renderScene() {
+      if (!isTouchDevice) {
+        renderer.render(scene, camera);
+        return true;
+      }
+
+      const now = performance.now();
+      if (now < nextMobileRenderMs) return false;
+      do nextMobileRenderMs += MOBILE_RENDER_INTERVAL_MS;
+      while (nextMobileRenderMs <= now);
+      renderer.render(scene, camera);
+      return true;
+    }
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(SPACE_COLOR);
@@ -1993,6 +2019,7 @@
     // 無駄に重いので、色が実際に変わったフレームだけ再描画する
     // （30秒の固定期間中は完全に同じ色なので大半のフレームをスキップできる）
     let lastSkyColorKey = "";
+    let lastMobileSkyUpdateMs = -Infinity;
     function updateCyberColors() {
       const phase = currentColorPhase();
       const lineColor = paletteColorAt(phase);
@@ -2001,8 +2028,11 @@
       spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       for (const m of tunnelLineMats) m.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       const skyKey = skyColor.r + "," + skyColor.g + "," + skyColor.b;
-      if (skyKey !== lastSkyColorKey) {
+      const now = performance.now();
+      const skyUpdateReady = !isTouchDevice || now - lastMobileSkyUpdateMs >= 100;
+      if (skyKey !== lastSkyColorKey && skyUpdateReady) {
         lastSkyColorKey = skyKey;
+        lastMobileSkyUpdateMs = now;
         paintSkyGradient(skyColor);
       }
       updateEnemyBulletColor(lineColor);
@@ -2508,17 +2538,18 @@
           trailLines.set(e, line);
         }
 
-        const n = e.trail.length;
+        const trailStep = isTouchDevice ? 2 : 1;
+        const n = Math.ceil(e.trail.length / trailStep);
         const positions = new Float32Array(n * 3);
         const colors = new Float32Array(n * 3);
         const base = new THREE.Color(e.trailColor || "#ffff00");
         const trailY = heightFor(e);
         for (let i = 0; i < n; i++) {
-          const p = e.trail[i];
+          const p = e.trail[Math.min(i * trailStep, e.trail.length - 1)];
           positions[i*3]   = toWorldX(p.x);
           positions[i*3+1] = trailY;
           positions[i*3+2] = toDepthZ(p.y);
-          const a = Math.max(0, Math.min(1, p.life / 240));
+          const a = Math.max(0, Math.min(1, p.life / TRAIL_LIFE_FRAMES));
           colors[i*3]   = base.r * a;
           colors[i*3+1] = base.g * a;
           colors[i*3+2] = base.b * a;
@@ -2549,7 +2580,7 @@
       const group = new THREE.Group();
       group.userData.rings = [];
       for (const ring of pattern.rings) {
-        const geo = new THREE.SphereGeometry(1, 12, 8);
+        const geo = new THREE.SphereGeometry(1, isTouchDevice ? 8 : 12, isTouchDevice ? 6 : 8);
         const mat = new THREE.MeshBasicMaterial({
           color: ring.color, transparent: true, opacity: ring.alpha,
           blending: THREE.AdditiveBlending, depthWrite: false
@@ -2558,7 +2589,7 @@
         group.add(mesh);
         group.userData.rings.push({ mesh, ring });
       }
-      const coreGeo = new THREE.SphereGeometry(1, 10, 8);
+      const coreGeo = new THREE.SphereGeometry(1, isTouchDevice ? 8 : 10, isTouchDevice ? 6 : 8);
       const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffee, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
       const core = new THREE.Mesh(coreGeo, coreMat);
       group.add(core);
@@ -2606,7 +2637,7 @@
       const group = new THREE.Group();
       group.userData.rings = [];
       for (const ring of finalBigExplosion.rings) {
-        const geo = new THREE.RingGeometry(0.94, 1, 64);
+        const geo = new THREE.RingGeometry(0.94, 1, isTouchDevice ? 32 : 64);
         geo.rotateX(-Math.PI / 2);
         const mat = new THREE.MeshBasicMaterial({
           color: ring.color, transparent: true, opacity: 0,
@@ -2617,7 +2648,7 @@
         group.add(mesh);
         group.userData.rings.push({ mesh, ring });
       }
-      const coreGeo = new THREE.SphereGeometry(1, 32, 24);
+      const coreGeo = new THREE.SphereGeometry(1, isTouchDevice ? 16 : 32, isTouchDevice ? 12 : 24);
       const coreMat = new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
       const core = new THREE.Mesh(coreGeo, coreMat);
       core.position.y = 20;
@@ -2716,7 +2747,7 @@
       if (showTunnel) updateTunnel();
       updateGroundScroll();
 
-      renderer.render(scene, camera);
+      renderScene();
     }
 
     /* =========================================================================
@@ -2905,7 +2936,7 @@
           spawnGlow.visible = false;
           starPoints.visible = false;
           applyTunnelVisible(false);
-          renderer.render(scene, camera);
+          renderScene();
           drawClearFlashHud();
         } else if (clearPhase === 2) {
           updateCruisePhase();
@@ -2915,7 +2946,7 @@
           spawnGlow.visible = false;
           starPoints.visible = true;
           applyTunnelVisible(false);
-          renderer.render(scene, camera);
+          renderScene();
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
           drawClearScreenHud();
@@ -2938,7 +2969,7 @@
           starPoints.visible = false;
           applyTunnelVisible(false);
           updateGroundScroll();
-          renderer.render(scene, camera);
+          renderScene();
           drawTitleHud();
           if (pad0 && pad0.buttons && pad0.buttons.some(b => b.pressed)) {
             unlockBgm();
