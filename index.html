@@ -37,146 +37,22 @@
       pointer-events: auto;
     }
 
-    .mobile-controls,
-    .rotate-device {
-      display: none;
-    }
-
-    /* ===== スマホ（タッチ端末）横向き表示 ===== */
+    /* ===== スマホ（タッチ端末）表示 =====
+       ゲーム画面の横幅をスマホ画面の横幅に一致させる（縦は760:640の比率を維持）。
+       viewportメタでピンチ拡大を無効化しているうえ、幅を100vw（＝表示領域幅）で
+       指定しているため、ユーザーが拡大表示しても再読み込みすれば必ず横幅が一致する。
+       JSがタッチ端末を検知したときだけ body.mobile-fit が付く。 */
     body.mobile-fit {
-      position: fixed;
-      inset: 0;
-      overflow: hidden;
-      align-items: center;
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
+      align-items: flex-start;
     }
     body.mobile-fit #stage {
-      width: min(118.75dvh, 64vw);
-      height: min(100dvh, 53.8947368vw);
+      width: 100vw;
+      height: calc(100vw * 640 / 760);
       border: none;
-      flex: none;
-      z-index: 1;
     }
     body.mobile-fit #stage canvas {
       width: 100%;
       height: 100%;
-    }
-    body.mobile-fit .mobile-controls {
-      display: block;
-      position: fixed;
-      inset-block: 0;
-      width: calc((100vw - min(118.75dvh, 64vw)) / 2);
-      min-width: 0;
-      z-index: 3;
-      pointer-events: none;
-    }
-    body.mobile-fit .mobile-controls.left {
-      left: 0;
-    }
-    body.mobile-fit .mobile-controls.right {
-      right: 0;
-    }
-    .mobile-button {
-      appearance: none;
-      -webkit-appearance: none;
-      border: 0;
-      margin: 0;
-      padding: 0;
-      font: inherit;
-      color: #000;
-      touch-action: none;
-      pointer-events: auto;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-button:active,
-    .mobile-button.is-pressed {
-      filter: brightness(.72);
-    }
-    .dpad {
-      position: absolute;
-      left: 50%;
-      top: 68%;
-      width: clamp(76px, 13vw, 122px);
-      aspect-ratio: 1;
-      transform: translate(-50%, -50%);
-    }
-    .dpad .mobile-button {
-      position: absolute;
-      width: 33.333%;
-      height: 33.333%;
-      background: #c6c6c6;
-      border-radius: 0;
-    }
-    .dpad-up    { left: 33.333%; top: 0; }
-    .dpad-left  { left: 0; top: 33.333%; }
-    .dpad-right { right: 0; top: 33.333%; }
-    .dpad-down  { left: 33.333%; bottom: 0; }
-    .dpad-center {
-      position: absolute;
-      left: 33.333%;
-      top: 33.333%;
-      width: 33.333%;
-      height: 33.333%;
-      background: #c6c6c6;
-    }
-    .dpad-center::after {
-      content: "";
-      position: absolute;
-      inset: 14%;
-      background: #000;
-    }
-    .mode-buttons {
-      position: absolute;
-      top: max(12px, 5dvh);
-      left: 50%;
-      width: min(84%, 126px);
-      display: grid;
-      gap: clamp(8px, 3dvh, 26px);
-      transform: translateX(-50%);
-    }
-    .mode-button {
-      width: 100%;
-      height: clamp(38px, 8dvh, 54px);
-      border-radius: 13px;
-      background: #fff;
-      font-size: clamp(16px, 3.4dvh, 25px);
-      line-height: 1;
-    }
-    .fire-button {
-      position: absolute;
-      left: 50%;
-      top: 72%;
-      width: clamp(56px, 7vw, 72px);
-      aspect-ratio: 1;
-      transform: translate(-50%, -50%);
-      border-radius: 50%;
-      background: #c6c6c6;
-      font-size: 0;
-    }
-    .rotate-device {
-      position: fixed;
-      inset: 0;
-      z-index: 20;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      background: #000;
-      color: #fff;
-      text-align: center;
-      font-size: 18px;
-      line-height: 1.7;
-    }
-    @media (orientation: portrait) {
-      body.mobile-fit #stage,
-      body.mobile-fit .mobile-controls {
-        visibility: hidden;
-      }
-      body.mobile-fit .rotate-device {
-        display: flex;
-      }
     }
   </style>
 </head>
@@ -185,26 +61,6 @@
     <canvas id="webgl" width="760" height="640"></canvas>
     <canvas id="hud"   width="760" height="640"></canvas>
   </div>
-
-  <div class="mobile-controls left" aria-label="移動操作">
-    <div class="dpad">
-      <button class="mobile-button dpad-up" data-key="ArrowUp" aria-label="上へ移動"></button>
-      <button class="mobile-button dpad-left" data-key="ArrowLeft" aria-label="左へ移動"></button>
-      <span class="dpad-center" aria-hidden="true"></span>
-      <button class="mobile-button dpad-right" data-key="ArrowRight" aria-label="右へ移動"></button>
-      <button class="mobile-button dpad-down" data-key="ArrowDown" aria-label="下へ移動"></button>
-    </div>
-  </div>
-
-  <div class="mobile-controls right" aria-label="アクション操作">
-    <div class="mode-buttons">
-      <button class="mobile-button mode-button" data-action-key="KeyZ" aria-label="無敵モード切り替え">無敵</button>
-      <button class="mobile-button mode-button" data-action-key="KeyQ" aria-label="Qモード切り替え">Q</button>
-    </div>
-    <button class="mobile-button fire-button" data-key="Space" aria-label="弾を発射"></button>
-  </div>
-
-  <div class="rotate-device" role="status">スマホを横向きにして<br>ゲームをプレイしてください</div>
 
   <!-- BGM用YouTubeプレーヤー（画面外に隠して音だけ使う） -->
   <div id="bgm-player" style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true"></div>
@@ -216,8 +72,6 @@
     }
   }
   </script>
-
-  <script src="./mobile-controls.js"></script>
 
   <script type="module">
     import * as THREE from "three";
@@ -236,9 +90,9 @@
     const hud = document.getElementById("hud");
     const hctx = hud.getContext("2d");
 
-    // PCはクリックでも開始できるようにする（フォーカス問題対策）。
-    // スマホは左右の操作ボタンから開始・リスタートするため、ゲーム画面への
-    // タップ自体では開始しない（デモ終了だけdocumentのpointerdownが担当）。
+    // クリック/タップでも開始できるようにする（フォーカス問題対策）。
+    // ただしタッチ端末（スマホ）はプレイ不可＝タップで開始・リスタートはさせない
+    // （デモをタッチしたらタイトルへ戻る処理はdocumentのpointerdownが担当）。
     stage.tabIndex = 0;
     stage.addEventListener("pointerdown", () => {
       unlockBgm();
@@ -273,7 +127,7 @@
       if (p && p.catch) p.catch(() => {});
     }
 
-    // ===== BGM（YouTube IFrame API。最初の敵を倒したときに鳴らす） =====
+    // ===== BGM（YouTube IFrame API。デモ開始時または最初の敵に弾が当たった時に鳴らす） =====
     // 3曲を順番にループ再生する。どの曲から始まるかはランダム。
     // APIの読み込みや再生に失敗してもゲーム本体には影響しない（無音で続行）。
     const BGM_VIDEO_IDS = ["SkypZuY6ZvA", "NOMa56y_Was", "G6tuvKE6_lA", "2fD9TBKHAdE"];
@@ -354,6 +208,21 @@
       tryStartBgm();
     }
 
+    function startDemoBgmIfReady() {
+      // デモはユーザー操作なしで始まるため、自動再生を一度試みる。
+      // ブラウザに拒否された場合もゲーム本体はそのまま続行する。
+      bgmWantPlay = true;
+      bgmUnlocked = true;
+      tryStartBgm();
+    }
+
+    function stopBgm() {
+      bgmWantPlay = false;
+      bgmPlaying = false;
+      if (!ytReady || !ytPlayer) return;
+      try { ytPlayer.stopVideo(); } catch (e) { /* BGMなしで続行 */ }
+    }
+
     // ===== 状態フラグ =====
     let gameStarted  = false;
     let gameOver     = false;
@@ -399,6 +268,7 @@
       demoRetargetTimer = 0; // 開始直後に最初の目標地点を選び直す
       demoIdleMs = 10000;    // 次回からのデモ開始は10秒後
       startGame();
+      startDemoBgmIfReady();
     }
 
     function exitDemo() {
@@ -450,15 +320,13 @@
       }
     }
 
-    // タッチ主体端末（pointer: coarse）かどうかは、スマホ用レイアウトと
-    // 描画負荷を落とす判定に使う。
+    // このゲームはPC専用（キーボード操作）。スマホなどのタッチ端末では
+    // プレイはできず、タイトル放置で始まるデモを眺めるだけ。デモ画面を
+    // タッチするとタイトルへ戻る。
+    // タッチ主体端末（pointer: coarse）かどうかは描画負荷を落とす判定にも使う。
     const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-    const MOBILE_RENDER_SCALE = 0.4;
-    const MOBILE_RENDER_FPS = 30;
-    const TRAIL_LIFE_FRAMES = isTouchDevice ? 120 : 240;
-    const TRAIL_MAX_POINTS = isTouchDevice ? 130 : 260;
 
-    // スマホでは横向き専用の操作UIを表示する（CSSの body.mobile-fit）
+    // スマホではゲーム画面の横幅を画面の横幅に一致させる（CSSの body.mobile-fit）
     if (isTouchDevice) document.body.classList.add("mobile-fit");
 
     // 画面タッチ（またはマウスクリック）でデモからタイトルへ戻る
@@ -1190,12 +1058,10 @@
         if (e.type === "trail_enemy") {
           e.y += e.speed;
 
-          if (!isTouchDevice) {
-            e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: TRAIL_LIFE_FRAMES });
-            for (let tt = e.trail.length - 1; tt >= 0; tt--) {
-              e.trail[tt].life--;
-              if (e.trail[tt].life <= 0) e.trail.splice(tt, 1);
-            }
+          e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: 240 });
+          for (let tt = e.trail.length - 1; tt >= 0; tt--) {
+            e.trail[tt].life--;
+            if (e.trail[tt].life <= 0) e.trail.splice(tt, 1);
           }
 
           e.shotTimer--;
@@ -1248,13 +1114,13 @@
         if (e.isMissile) {
           e.y += e.speed;
 
-          if (!isTouchDevice && Array.isArray(e.trail)) {
-            e.trail.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, life: TRAIL_LIFE_FRAMES });
+          if (Array.isArray(e.trail)) {
+            e.trail.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, life: 240 });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
               if (e.trail[t].life <= 0) e.trail.splice(t, 1);
             }
-            if (e.trail.length > TRAIL_MAX_POINTS) e.trail.splice(0, e.trail.length - TRAIL_MAX_POINTS);
+            if (e.trail.length > 260) e.trail.splice(0, e.trail.length - 260);
           }
 
           if (e.y > FIELD_H) {
@@ -1315,13 +1181,13 @@
           }
         } else {
           e.y += e.speed;
-          if (!isTouchDevice && !e.isBoss && !e.isFinalBoss && !e.isMissile && Array.isArray(e.trail)) {
-            e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: TRAIL_LIFE_FRAMES });
+          if (!e.isBoss && !e.isFinalBoss && !e.isMissile && Array.isArray(e.trail)) {
+            e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: 240 });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
               if (e.trail[t].life <= 0) e.trail.splice(t, 1);
             }
-            if (e.trail.length > TRAIL_MAX_POINTS) e.trail.splice(0, e.trail.length - TRAIL_MAX_POINTS);
+            if (e.trail.length > 260) e.trail.splice(0, e.trail.length - 260);
           }
 
           if (e.y > FIELD_H) {
@@ -1604,6 +1470,8 @@
     }
 
     function backToTitle() {
+      // タイトル画面ではBGMを流さない。ゲーム／デモから戻るたび必ず停止する。
+      stopBgm();
       clearAllMeshes();
       bullets.length = 0;
       enemies.length = 0;
@@ -1656,31 +1524,13 @@
 
     const webglCanvas = document.getElementById("webgl");
     // スマホはGPUが弱く、高解像度＋アンチエイリアスだと処理落ちして動きが重くなる。
-    // タッチ端末ではWebGL描画解像度を40%に抑え、MSAAも切る。
-    // HUDは従来解像度のままなので文字の読みやすさは維持する。
+    // タッチ端末では描画解像度を等倍(760×640)に抑え、MSAAも切る
+    // （小さい画面に縮小表示されるため見た目の差はほぼ出ない）。
     const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: !isTouchDevice });
-    renderer.setSize(
-      isTouchDevice ? Math.round(CANVAS_W * MOBILE_RENDER_SCALE) : CANVAS_W,
-      isTouchDevice ? Math.round(CANVAS_H * MOBILE_RENDER_SCALE) : CANVAS_H,
-      false
-    );
+    renderer.setSize(CANVAS_W, CANVAS_H, false);
     renderer.setPixelRatio(isTouchDevice ? 1 : Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = ENABLE_SHADOWS;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-    // ゲームロジックは従来どおり更新し、スマホだけ3DのGPU描画を30fpsに制限する。
-    // 描画判定を重い3D同期処理より前に行い、描かないフレームではCPU処理も省く。
-    const MOBILE_RENDER_INTERVAL_MS = 1000 / MOBILE_RENDER_FPS;
-    let nextMobileRenderMs = performance.now() + MOBILE_RENDER_INTERVAL_MS;
-    function shouldRenderScene() {
-      if (!isTouchDevice) return true;
-
-      const now = performance.now();
-      if (now + 0.01 < nextMobileRenderMs) return false;
-      do nextMobileRenderMs += MOBILE_RENDER_INTERVAL_MS;
-      while (nextMobileRenderMs <= now + 0.01);
-      return true;
-    }
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(SPACE_COLOR);
@@ -2017,7 +1867,6 @@
     // 無駄に重いので、色が実際に変わったフレームだけ再描画する
     // （30秒の固定期間中は完全に同じ色なので大半のフレームをスキップできる）
     let lastSkyColorKey = "";
-    let lastMobileSkyUpdateMs = -Infinity;
     function updateCyberColors() {
       const phase = currentColorPhase();
       const lineColor = paletteColorAt(phase);
@@ -2026,11 +1875,8 @@
       spawnGlowMat.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       for (const m of tunnelLineMats) m.color.setRGB(lineColor.r / 255, lineColor.g / 255, lineColor.b / 255);
       const skyKey = skyColor.r + "," + skyColor.g + "," + skyColor.b;
-      const now = performance.now();
-      const skyUpdateReady = !isTouchDevice || now - lastMobileSkyUpdateMs >= 100;
-      if (skyKey !== lastSkyColorKey && skyUpdateReady) {
+      if (skyKey !== lastSkyColorKey) {
         lastSkyColorKey = skyKey;
-        lastMobileSkyUpdateMs = now;
         paintSkyGradient(skyColor);
       }
       updateEnemyBulletColor(lineColor);
@@ -2536,18 +2382,17 @@
           trailLines.set(e, line);
         }
 
-        const trailStep = isTouchDevice ? 2 : 1;
-        const n = Math.ceil(e.trail.length / trailStep);
+        const n = e.trail.length;
         const positions = new Float32Array(n * 3);
         const colors = new Float32Array(n * 3);
         const base = new THREE.Color(e.trailColor || "#ffff00");
         const trailY = heightFor(e);
         for (let i = 0; i < n; i++) {
-          const p = e.trail[Math.min(i * trailStep, e.trail.length - 1)];
+          const p = e.trail[i];
           positions[i*3]   = toWorldX(p.x);
           positions[i*3+1] = trailY;
           positions[i*3+2] = toDepthZ(p.y);
-          const a = Math.max(0, Math.min(1, p.life / TRAIL_LIFE_FRAMES));
+          const a = Math.max(0, Math.min(1, p.life / 240));
           colors[i*3]   = base.r * a;
           colors[i*3+1] = base.g * a;
           colors[i*3+2] = base.b * a;
@@ -2578,7 +2423,7 @@
       const group = new THREE.Group();
       group.userData.rings = [];
       for (const ring of pattern.rings) {
-        const geo = new THREE.SphereGeometry(1, isTouchDevice ? 8 : 12, isTouchDevice ? 6 : 8);
+        const geo = new THREE.SphereGeometry(1, 12, 8);
         const mat = new THREE.MeshBasicMaterial({
           color: ring.color, transparent: true, opacity: ring.alpha,
           blending: THREE.AdditiveBlending, depthWrite: false
@@ -2587,7 +2432,7 @@
         group.add(mesh);
         group.userData.rings.push({ mesh, ring });
       }
-      const coreGeo = new THREE.SphereGeometry(1, isTouchDevice ? 8 : 10, isTouchDevice ? 6 : 8);
+      const coreGeo = new THREE.SphereGeometry(1, 10, 8);
       const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffee, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
       const core = new THREE.Mesh(coreGeo, coreMat);
       group.add(core);
@@ -2635,7 +2480,7 @@
       const group = new THREE.Group();
       group.userData.rings = [];
       for (const ring of finalBigExplosion.rings) {
-        const geo = new THREE.RingGeometry(0.94, 1, isTouchDevice ? 32 : 64);
+        const geo = new THREE.RingGeometry(0.94, 1, 64);
         geo.rotateX(-Math.PI / 2);
         const mat = new THREE.MeshBasicMaterial({
           color: ring.color, transparent: true, opacity: 0,
@@ -2646,7 +2491,7 @@
         group.add(mesh);
         group.userData.rings.push({ mesh, ring });
       }
-      const coreGeo = new THREE.SphereGeometry(1, isTouchDevice ? 16 : 32, isTouchDevice ? 12 : 24);
+      const coreGeo = new THREE.SphereGeometry(1, 32, 24);
       const coreMat = new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
       const core = new THREE.Mesh(coreGeo, coreMat);
       core.position.y = 20;
@@ -2722,14 +2567,12 @@
     }
 
     function render3D() {
-      if (!shouldRenderScene()) return false;
-
       syncBoxEntities(bullets);
       syncBoxEntities(enemyBullets);
       syncBoxEntities(enemies);
       syncBoxEntities(powerStars);
       syncBoxEntities(doubleShotStars);
-      if (!isTouchDevice) syncTrails();
+      syncTrails();
       syncExplosions();
       syncFinalBigExplosion();
       syncPlayerMesh();
@@ -2748,7 +2591,6 @@
       updateGroundScroll();
 
       renderer.render(scene, camera);
-      return true;
     }
 
     /* =========================================================================
@@ -2765,15 +2607,15 @@
 
       hctx.font = "18px monospace";
       hctx.fillStyle = "#88ff88";
-      hctx.fillText(isTouchDevice ? "LANDSCAPE MOBILE PLAY" : "PC PLAY ONLY", CANVAS_W / 2, 162);
+      hctx.fillText("PC PLAY ONLY", CANVAS_W / 2, 162);
 
       hctx.font = "16px monospace";
       hctx.fillStyle = "#88ff88";
-      hctx.fillText(isTouchDevice ? "画面左右のボタンで操作" : "操作　←↑↓→ & SPACE", CANVAS_W / 2, 192);
+      hctx.fillText("操作　←↑↓→ & SPACE", CANVAS_W / 2, 192);
 
       hctx.font = "16px monospace";
       hctx.fillStyle = "#88ff88";
-      hctx.fillText(isTouchDevice ? "MOVE & FIRE" : "KEYBOARD & GAME CONTROLLER", CANVAS_W / 2, 217);
+      hctx.fillText("KEYBOARD & GAME CONTROLLER", CANVAS_W / 2, 217);
 
       const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
       if (blinkOn) {
@@ -2920,20 +2762,7 @@
     // ===== メインループ =====
     enemySpawnTimer = 30;
 
-    const MOBILE_LOGIC_INTERVAL_MS = 1000 / 60;
-    let nextMobileLogicMs = performance.now() + MOBILE_LOGIC_INTERVAL_MS;
-
-    function loop(now = performance.now()) {
-      requestAnimationFrame(loop);
-
-      // 90Hz/120Hz端末でもゲーム更新を最大60回/秒に抑える。
-      // PCは従来どおり画面のrequestAnimationFrameごとに更新する。
-      if (isTouchDevice) {
-        if (now + 0.01 < nextMobileLogicMs) return;
-        do nextMobileLogicMs += MOBILE_LOGIC_INTERVAL_MS;
-        while (nextMobileLogicMs <= now + 0.01);
-      }
-
+    function loop() {
       frameCount++;
 
       try {
@@ -2944,30 +2773,26 @@
 
         if (clearPhase === 1) {
           updateClearExplosionPhase();
-          if (shouldRenderScene()) {
-            syncPlayerMesh();
-            syncFinalBigExplosion();
-            ground.visible = false;
-            spawnGlow.visible = false;
-            starPoints.visible = false;
-            applyTunnelVisible(false);
-            renderer.render(scene, camera);
-            drawClearFlashHud();
-          }
+          syncPlayerMesh();
+          syncFinalBigExplosion();
+          ground.visible = false;
+          spawnGlow.visible = false;
+          starPoints.visible = false;
+          applyTunnelVisible(false);
+          renderer.render(scene, camera);
+          drawClearFlashHud();
         } else if (clearPhase === 2) {
           updateCruisePhase();
-          if (shouldRenderScene()) {
-            syncPlayerMesh();
-            syncStarfieldMotion();
-            ground.visible = false;
-            spawnGlow.visible = false;
-            starPoints.visible = true;
-            applyTunnelVisible(false);
-            renderer.render(scene, camera);
-            hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-          }
+          syncPlayerMesh();
+          syncStarfieldMotion();
+          ground.visible = false;
+          spawnGlow.visible = false;
+          starPoints.visible = true;
+          applyTunnelVisible(false);
+          renderer.render(scene, camera);
+          hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
-          if (shouldRenderScene()) drawClearScreenHud();
+          drawClearScreenHud();
           // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ。
           // ただしQモード（ハードモード）でクリアした場合は勧誘せず直接タイトルへ。
           // （キーボードはkeydownリスナー側で処理）
@@ -2976,21 +2801,19 @@
             else { clearPhase = 4; clearFrame = 0; }
           }
         } else if (clearPhase === 4) {
-          if (shouldRenderScene()) drawHardModePromptHud();
+          drawHardModePromptHud();
           // 黒画面：ゲームパッドはどのボタンでもタイトルへ（ハードモード開始はキーボードのQのみ）
           if (gamepadAnyJustPressed) backToTitle();
         } else if (!gameStarted) {
-          if (shouldRenderScene()) {
-            syncPlayerMesh();
-            syncStarfieldMotion();
-            ground.visible = true;
-            spawnGlow.visible = true;
-            starPoints.visible = false;
-            applyTunnelVisible(false);
-            updateGroundScroll();
-            renderer.render(scene, camera);
-            drawTitleHud();
-          }
+          syncPlayerMesh();
+          syncStarfieldMotion();
+          ground.visible = true;
+          spawnGlow.visible = true;
+          starPoints.visible = false;
+          applyTunnelVisible(false);
+          updateGroundScroll();
+          renderer.render(scene, camera);
+          drawTitleHud();
           if (pad0 && pad0.buttons && pad0.buttons.some(b => b.pressed)) {
             unlockBgm();
             startGame();
@@ -3020,22 +2843,21 @@
             handleCollisions();
             updateExplosions();
 
-            if (render3D()) {
-              drawUIHud();
-              if (demoMode) drawDemoOverlay();
-            }
+            render3D();
+            drawUIHud();
+            if (demoMode) drawDemoOverlay();
           } else if (demoMode) {
             // デモ中にやられたら爆発を少し見せてからタイトルへ
             updateExplosions();
-            if (render3D()) {
-              drawUIHud();
-              drawDemoOverlay();
-            }
+            render3D();
+            drawUIHud();
+            drawDemoOverlay();
             demoOverFrames++;
             if (demoOverFrames >= 120) exitDemo();
           } else {
             updateExplosions();
-            if (render3D()) drawGameOverHud();
+            render3D();
+            drawGameOverHud();
           }
         }
 
@@ -3045,6 +2867,7 @@
         console.error(e);
       }
 
+      requestAnimationFrame(loop);
     }
 
     function handleResize() {
@@ -3052,7 +2875,7 @@
     }
     window.addEventListener("resize", handleResize);
 
-    requestAnimationFrame(loop);
+    loop();
   </script>
 </body>
 </html>
