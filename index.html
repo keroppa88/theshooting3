@@ -455,7 +455,8 @@
 
     // 現在の傾きから steer(左右 -1..1) と pitchForward(前後 -1..1) を求める。
     // スマホを持ってゲーム開始した角度をニュートラルにすることで、
-    // 横画面時の beta/gamma の絶対値差で端に張り付く問題を避ける。
+    // ブラウザ実機の横画面で beta/gamma の絶対値差により
+    // 端に張り付いて「傾きが効かない」ように見える問題を避ける。
     function readTilt() {
       const raw = readTiltRaw();
       if (!raw) return { steer: 0, pitchForward: 0 };
