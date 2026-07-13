@@ -348,7 +348,10 @@
     let tiltPermRequested = false;
     let tiltBeta = 0;             // 前後（ポートレート基準）[-180,180]
     let tiltGamma = 0;            // 左右（ポートレート基準）[-90,90]
-    let touchFiring = false;      // 画面タッチ中は発射し続ける
+    let motionX = 0;              // DeviceMotion fallback: 左右の重力加速度
+    let motionY = 0;              // DeviceMotion fallback: 前後の重力加速度
+    let motionActive = false;
+    let touchFiring = false;      // 左右の黒い余白タッチ中は発射し続ける
 
     function onDeviceOrientation(e) {
       if (e.beta === null && e.gamma === null) return;
@@ -357,20 +360,45 @@
       tiltActive = true;
     }
 
+    function onDeviceMotion(e) {
+      const a = e.accelerationIncludingGravity;
+      if (!a || (a.x === null && a.y === null)) return;
+      motionX = a.x || 0;
+      motionY = a.y || 0;
+      motionActive = true;
+    }
+
+    function addTiltListeners() {
+      if (window.DeviceOrientationEvent) {
+        window.addEventListener("deviceorientation", onDeviceOrientation, true);
+      }
+      if (window.DeviceMotionEvent) {
+        window.addEventListener("devicemotion", onDeviceMotion, true);
+      }
+    }
+
     // iOS13+ は許可が必要。ユーザー操作（最初のタップ）から呼ぶ。
+    // Android/PCブラウザでは許可APIが無いことが多いので、そのままリスナーを登録する。
     function enableTilt() {
       if (tiltPermRequested) return;
       tiltPermRequested = true;
       try {
+        const requests = [];
         const DOE = window.DeviceOrientationEvent;
-        if (DOE && typeof DOE.requestPermission === "function") {
-          DOE.requestPermission().then(res => {
-            if (res === "granted") window.addEventListener("deviceorientation", onDeviceOrientation, true);
+        const DME = window.DeviceMotionEvent;
+        if (DOE && typeof DOE.requestPermission === "function") requests.push(DOE.requestPermission());
+        if (DME && typeof DME.requestPermission === "function") requests.push(DME.requestPermission());
+
+        if (requests.length > 0) {
+          Promise.allSettled(requests).then(results => {
+            if (results.some(r => r.status === "fulfilled" && r.value === "granted")) addTiltListeners();
           }).catch(() => {});
-        } else if (DOE) {
-          window.addEventListener("deviceorientation", onDeviceOrientation, true);
+        } else {
+          addTiltListeners();
         }
-      } catch (err) { /* 非対応端末は無視 */ }
+      } catch (err) {
+        addTiltListeners();
+      }
     }
 
     // 横向きへ固定（対応端末のみ・ベストエフォート。iOSは非対応だがCSSの
@@ -396,27 +424,59 @@
     // 現在の傾きから steer(左右 -1..1) と pitchBack(前後 0..1) を求める。
     function readTilt() {
       const ang = orientationAngle();
-      // 横向きでは、ポートレート基準の gamma が前後、beta が左右になる。
       let steerRaw, pitchRaw;
-      if (ang === 270 || ang === -90) {   // 時計回り横向き
-        steerRaw = -tiltBeta;
-        pitchRaw = tiltGamma;
-      } else {                             // 90（反時計回り）ほか
-        steerRaw = tiltBeta;
-        pitchRaw = -tiltGamma;
+
+      if (tiltActive) {
+        // 横向きでは、ポートレート基準の gamma が前後、beta が左右になる。
+        if (ang === 270 || ang === -90) {   // 時計回り横向き
+          steerRaw = -tiltBeta;
+          pitchRaw = tiltGamma;
+        } else {                             // 90（反時計回り）ほか
+          steerRaw = tiltBeta;
+          pitchRaw = -tiltGamma;
+        }
+        return {
+          steer: Math.max(-1, Math.min(1, steerRaw / 35)),
+          pitchBack: Math.max(0, Math.min(1, pitchRaw / 45))
+        };
       }
-      const steer = Math.max(-1, Math.min(1, steerRaw / 35));   // ±35度でフル
-      // 奥に倒す(pitchRaw>0)ほど前へ。直立(0)・画面下向き(<0)は最も手前(0)。
-      const pitchBack = Math.max(0, Math.min(1, pitchRaw / 45)); // 45度でフル前進
-      return { steer, pitchBack };
+
+      // 一部端末/ブラウザではDeviceOrientationが届かないため、
+      // DeviceMotionの重力加速度から近い操作感を作るフォールバック。
+      if (motionActive) {
+        if (ang === 270 || ang === -90) {
+          steerRaw = motionY;
+          pitchRaw = motionX;
+        } else {
+          steerRaw = -motionY;
+          pitchRaw = -motionX;
+        }
+        return {
+          steer: Math.max(-1, Math.min(1, steerRaw / 4.5)),
+          pitchBack: Math.max(0, Math.min(1, pitchRaw / 6.5))
+        };
+      }
+
+      return { steer: 0, pitchBack: 0 };
     }
 
-    // 画面タッチで発射し続ける／状態遷移（タイトル→開始、ゲームオーバー→タイトル等）
+    function isSideFireTouch(touch) {
+      const r = stage.getBoundingClientRect();
+      return touch.clientX < r.left || touch.clientX > r.right;
+    }
+
+    function updateTouchFiring(e) {
+      // スマホ専用モードでは、ゲーム画面の左右にできる黒い余白を
+      // ショットボタンとして使う。画面内タッチは誤射防止のため発射扱いにしない。
+      touchFiring = Array.from(e.touches || []).some(isSideFireTouch);
+    }
+
+    // 左右の黒い余白タッチで発射し続ける／状態遷移（タイトル→開始、ゲームオーバー→タイトル等）
     if (isTouchDevice) {
-      const updateTouchFiring = e => { touchFiring = (e.touches && e.touches.length > 0); };
-      stage.addEventListener("touchstart", updateTouchFiring, { passive: true });
-      stage.addEventListener("touchend", updateTouchFiring, { passive: true });
-      stage.addEventListener("touchcancel", updateTouchFiring, { passive: true });
+      document.addEventListener("touchstart", updateTouchFiring, { passive: true });
+      document.addEventListener("touchmove", updateTouchFiring, { passive: true });
+      document.addEventListener("touchend", updateTouchFiring, { passive: true });
+      document.addEventListener("touchcancel", updateTouchFiring, { passive: true });
     }
 
     // タッチ／クリックでの状態遷移
@@ -1065,7 +1125,7 @@
       }
 
       // スマホ：傾きで操作。左右は傾き量で移動、前後は傾き角で位置を決める。
-      if (isTouchDevice && tiltActive) {
+      if (isTouchDevice && (tiltActive || motionActive)) {
         const { steer, pitchBack } = readTilt();
         player.x += steer * player.speed;
         const nearY = FIELD_H - player.h;        // 最も手前
@@ -2732,7 +2792,7 @@
 
         hctx.font = "16px monospace";
         hctx.fillText("左右に傾けて移動", CANVAS_W / 2, 192);
-        hctx.fillText("奥に倒すと前進・画面タッチで発射", CANVAS_W / 2, 217);
+        hctx.fillText("奥に倒すと前進・左右の黒い余白タッチで発射", CANVAS_W / 2, 217);
 
         const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
         if (blinkOn) {
