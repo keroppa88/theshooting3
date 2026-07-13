@@ -453,8 +453,8 @@
     // タッチ主体端末（pointer: coarse）かどうかは、スマホ用レイアウトと
     // 描画負荷を落とす判定に使う。
     const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-    const MOBILE_RENDER_SCALE = 0.5;
-    const MOBILE_RENDER_FPS = 50;
+    const MOBILE_RENDER_SCALE = 0.4;
+    const MOBILE_RENDER_FPS = 30;
     const TRAIL_LIFE_FRAMES = isTouchDevice ? 120 : 240;
     const TRAIL_MAX_POINTS = isTouchDevice ? 130 : 260;
 
@@ -1190,10 +1190,12 @@
         if (e.type === "trail_enemy") {
           e.y += e.speed;
 
-          e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: TRAIL_LIFE_FRAMES });
-          for (let tt = e.trail.length - 1; tt >= 0; tt--) {
-            e.trail[tt].life--;
-            if (e.trail[tt].life <= 0) e.trail.splice(tt, 1);
+          if (!isTouchDevice) {
+            e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: TRAIL_LIFE_FRAMES });
+            for (let tt = e.trail.length - 1; tt >= 0; tt--) {
+              e.trail[tt].life--;
+              if (e.trail[tt].life <= 0) e.trail.splice(tt, 1);
+            }
           }
 
           e.shotTimer--;
@@ -1246,7 +1248,7 @@
         if (e.isMissile) {
           e.y += e.speed;
 
-          if (Array.isArray(e.trail)) {
+          if (!isTouchDevice && Array.isArray(e.trail)) {
             e.trail.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, life: TRAIL_LIFE_FRAMES });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
@@ -1313,7 +1315,7 @@
           }
         } else {
           e.y += e.speed;
-          if (!e.isBoss && !e.isFinalBoss && !e.isMissile && Array.isArray(e.trail)) {
+          if (!isTouchDevice && !e.isBoss && !e.isFinalBoss && !e.isMissile && Array.isArray(e.trail)) {
             e.trail.push({ x: e.x + e.w/2, y: e.y + e.h/2, life: TRAIL_LIFE_FRAMES });
             for (let t = e.trail.length - 1; t >= 0; t--) {
               e.trail[t].life--;
@@ -1654,7 +1656,7 @@
 
     const webglCanvas = document.getElementById("webgl");
     // スマホはGPUが弱く、高解像度＋アンチエイリアスだと処理落ちして動きが重くなる。
-    // タッチ端末ではWebGL描画解像度を50%に抑え、MSAAも切る。
+    // タッチ端末ではWebGL描画解像度を40%に抑え、MSAAも切る。
     // HUDは従来解像度のままなので文字の読みやすさは維持する。
     const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: !isTouchDevice });
     renderer.setSize(
@@ -1666,21 +1668,17 @@
     renderer.shadowMap.enabled = ENABLE_SHADOWS;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // ゲームロジックは従来どおり更新し、スマホだけ3DのGPU描画を50fpsに制限する。
-    // 60Hz画面では6フレーム中5フレームを描く配分になり、速度や当たり判定は変わらない。
+    // ゲームロジックは従来どおり更新し、スマホだけ3DのGPU描画を30fpsに制限する。
+    // 描画判定を重い3D同期処理より前に行い、描かないフレームではCPU処理も省く。
     const MOBILE_RENDER_INTERVAL_MS = 1000 / MOBILE_RENDER_FPS;
     let nextMobileRenderMs = performance.now() + MOBILE_RENDER_INTERVAL_MS;
-    function renderScene() {
-      if (!isTouchDevice) {
-        renderer.render(scene, camera);
-        return true;
-      }
+    function shouldRenderScene() {
+      if (!isTouchDevice) return true;
 
       const now = performance.now();
-      if (now < nextMobileRenderMs) return false;
+      if (now + 0.01 < nextMobileRenderMs) return false;
       do nextMobileRenderMs += MOBILE_RENDER_INTERVAL_MS;
-      while (nextMobileRenderMs <= now);
-      renderer.render(scene, camera);
+      while (nextMobileRenderMs <= now + 0.01);
       return true;
     }
 
@@ -2724,12 +2722,14 @@
     }
 
     function render3D() {
+      if (!shouldRenderScene()) return false;
+
       syncBoxEntities(bullets);
       syncBoxEntities(enemyBullets);
       syncBoxEntities(enemies);
       syncBoxEntities(powerStars);
       syncBoxEntities(doubleShotStars);
-      syncTrails();
+      if (!isTouchDevice) syncTrails();
       syncExplosions();
       syncFinalBigExplosion();
       syncPlayerMesh();
@@ -2747,7 +2747,8 @@
       if (showTunnel) updateTunnel();
       updateGroundScroll();
 
-      renderScene();
+      renderer.render(scene, camera);
+      return true;
     }
 
     /* =========================================================================
@@ -2919,7 +2920,20 @@
     // ===== メインループ =====
     enemySpawnTimer = 30;
 
-    function loop() {
+    const MOBILE_LOGIC_INTERVAL_MS = 1000 / 60;
+    let nextMobileLogicMs = performance.now() + MOBILE_LOGIC_INTERVAL_MS;
+
+    function loop(now = performance.now()) {
+      requestAnimationFrame(loop);
+
+      // 90Hz/120Hz端末でもゲーム更新を最大60回/秒に抑える。
+      // PCは従来どおり画面のrequestAnimationFrameごとに更新する。
+      if (isTouchDevice) {
+        if (now + 0.01 < nextMobileLogicMs) return;
+        do nextMobileLogicMs += MOBILE_LOGIC_INTERVAL_MS;
+        while (nextMobileLogicMs <= now + 0.01);
+      }
+
       frameCount++;
 
       try {
@@ -2930,26 +2944,30 @@
 
         if (clearPhase === 1) {
           updateClearExplosionPhase();
-          syncPlayerMesh();
-          syncFinalBigExplosion();
-          ground.visible = false;
-          spawnGlow.visible = false;
-          starPoints.visible = false;
-          applyTunnelVisible(false);
-          renderScene();
-          drawClearFlashHud();
+          if (shouldRenderScene()) {
+            syncPlayerMesh();
+            syncFinalBigExplosion();
+            ground.visible = false;
+            spawnGlow.visible = false;
+            starPoints.visible = false;
+            applyTunnelVisible(false);
+            renderer.render(scene, camera);
+            drawClearFlashHud();
+          }
         } else if (clearPhase === 2) {
           updateCruisePhase();
-          syncPlayerMesh();
-          syncStarfieldMotion();
-          ground.visible = false;
-          spawnGlow.visible = false;
-          starPoints.visible = true;
-          applyTunnelVisible(false);
-          renderScene();
-          hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+          if (shouldRenderScene()) {
+            syncPlayerMesh();
+            syncStarfieldMotion();
+            ground.visible = false;
+            spawnGlow.visible = false;
+            starPoints.visible = true;
+            applyTunnelVisible(false);
+            renderer.render(scene, camera);
+            hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+          }
         } else if (clearPhase === 3) {
-          drawClearScreenHud();
+          if (shouldRenderScene()) drawClearScreenHud();
           // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ。
           // ただしQモード（ハードモード）でクリアした場合は勧誘せず直接タイトルへ。
           // （キーボードはkeydownリスナー側で処理）
@@ -2958,19 +2976,21 @@
             else { clearPhase = 4; clearFrame = 0; }
           }
         } else if (clearPhase === 4) {
-          drawHardModePromptHud();
+          if (shouldRenderScene()) drawHardModePromptHud();
           // 黒画面：ゲームパッドはどのボタンでもタイトルへ（ハードモード開始はキーボードのQのみ）
           if (gamepadAnyJustPressed) backToTitle();
         } else if (!gameStarted) {
-          syncPlayerMesh();
-          syncStarfieldMotion();
-          ground.visible = true;
-          spawnGlow.visible = true;
-          starPoints.visible = false;
-          applyTunnelVisible(false);
-          updateGroundScroll();
-          renderScene();
-          drawTitleHud();
+          if (shouldRenderScene()) {
+            syncPlayerMesh();
+            syncStarfieldMotion();
+            ground.visible = true;
+            spawnGlow.visible = true;
+            starPoints.visible = false;
+            applyTunnelVisible(false);
+            updateGroundScroll();
+            renderer.render(scene, camera);
+            drawTitleHud();
+          }
           if (pad0 && pad0.buttons && pad0.buttons.some(b => b.pressed)) {
             unlockBgm();
             startGame();
@@ -3000,21 +3020,22 @@
             handleCollisions();
             updateExplosions();
 
-            render3D();
-            drawUIHud();
-            if (demoMode) drawDemoOverlay();
+            if (render3D()) {
+              drawUIHud();
+              if (demoMode) drawDemoOverlay();
+            }
           } else if (demoMode) {
             // デモ中にやられたら爆発を少し見せてからタイトルへ
             updateExplosions();
-            render3D();
-            drawUIHud();
-            drawDemoOverlay();
+            if (render3D()) {
+              drawUIHud();
+              drawDemoOverlay();
+            }
             demoOverFrames++;
             if (demoOverFrames >= 120) exitDemo();
           } else {
             updateExplosions();
-            render3D();
-            drawGameOverHud();
+            if (render3D()) drawGameOverHud();
           }
         }
 
@@ -3024,7 +3045,6 @@
         console.error(e);
       }
 
-      requestAnimationFrame(loop);
     }
 
     function handleResize() {
@@ -3032,7 +3052,7 @@
     }
     window.addEventListener("resize", handleResize);
 
-    loop();
+    requestAnimationFrame(loop);
   </script>
 </body>
 </html>
