@@ -38,21 +38,44 @@
     }
 
     /* ===== スマホ（タッチ端末）表示 =====
-       ゲーム画面の横幅をスマホ画面の横幅に一致させる（縦は760:640の比率を維持）。
-       viewportメタでピンチ拡大を無効化しているうえ、幅を100vw（＝表示領域幅）で
-       指定しているため、ユーザーが拡大表示しても再読み込みすれば必ず横幅が一致する。
+       スマホは横画面専用。横向きに構えたとき、ゲーム画面(760:640)が
+       画面内に収まるようアスペクト比を保ってフィットさせる。
        JSがタッチ端末を検知したときだけ body.mobile-fit が付く。 */
     body.mobile-fit {
-      align-items: flex-start;
+      align-items: center;
+      /* タッチでのスクロール・ピンチ・ダブルタップ拡大を無効化 */
+      touch-action: none;
+      overflow: hidden;
     }
     body.mobile-fit #stage {
-      width: 100vw;
-      height: calc(100vw * 640 / 760);
+      width: min(100vw, calc(100vh * 760 / 640));
+      height: min(100vh, calc(100vw * 640 / 760));
       border: none;
+      touch-action: none;
     }
     body.mobile-fit #stage canvas {
       width: 100%;
       height: 100%;
+    }
+
+    /* 縦向きのときは「横向きにしてください」の案内を全面に出す */
+    #rotate-notice { display: none; }
+    body.mobile-fit #rotate-notice {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #000;
+      color: #fff;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 20px;
+      line-height: 1.8;
+      gap: 8px;
+    }
+    @media (orientation: portrait) {
+      body.mobile-fit #rotate-notice { display: flex; }
     }
   </style>
 </head>
@@ -60,6 +83,13 @@
   <div id="stage" tabindex="0">
     <canvas id="webgl" width="760" height="640"></canvas>
     <canvas id="hud"   width="760" height="640"></canvas>
+  </div>
+
+  <!-- スマホを縦に持ったときの回転案内（横向き専用） -->
+  <div id="rotate-notice">
+    <div style="font-size:40px">📱↻</div>
+    <div>横向きにしてください</div>
+    <div style="font-size:15px;color:#9cf">Please rotate to landscape</div>
   </div>
 
   <!-- BGM用YouTubeプレーヤー（画面外に隠して音だけ使う） -->
@@ -304,18 +334,115 @@
       }
     }
 
-    // このゲームはPC専用（キーボード操作）。スマホなどのタッチ端末では
-    // プレイはできず、タイトル放置で始まるデモを眺めるだけ。デモ画面を
-    // タッチするとタイトルへ戻る。
-    // タッチ主体端末（pointer: coarse）かどうかは描画負荷を落とす判定にも使う。
+    // タッチ主体端末（pointer: coarse）＝スマホ等。スマホは横画面専用で、
+    // 端末の傾きで自機を操作し、画面タッチで弾を撃ち続ける。
     const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
 
-    // スマホではゲーム画面の横幅を画面の横幅に一致させる（CSSの body.mobile-fit）
+    // スマホは横向きにフィット表示（CSSの body.mobile-fit）
     if (isTouchDevice) document.body.classList.add("mobile-fit");
 
-    // 画面タッチ（またはマウスクリック）でデモからタイトルへ戻る
+    // ===== スマホの傾き操作（DeviceOrientation） =====
+    // 横画面で構えたときに：左右の傾き＝左右移動、前後の傾き＝前後移動。
+    // 直立／画面を下に傾けた状態＝最も手前、奥に倒すほど前へ。
+    let tiltActive = false;       // センサー値を受信できているか
+    let tiltPermRequested = false;
+    let tiltBeta = 0;             // 前後（ポートレート基準）[-180,180]
+    let tiltGamma = 0;            // 左右（ポートレート基準）[-90,90]
+    let touchFiring = false;      // 画面タッチ中は発射し続ける
+
+    function onDeviceOrientation(e) {
+      if (e.beta === null && e.gamma === null) return;
+      tiltBeta = e.beta || 0;
+      tiltGamma = e.gamma || 0;
+      tiltActive = true;
+    }
+
+    // iOS13+ は許可が必要。ユーザー操作（最初のタップ）から呼ぶ。
+    function enableTilt() {
+      if (tiltPermRequested) return;
+      tiltPermRequested = true;
+      try {
+        const DOE = window.DeviceOrientationEvent;
+        if (DOE && typeof DOE.requestPermission === "function") {
+          DOE.requestPermission().then(res => {
+            if (res === "granted") window.addEventListener("deviceorientation", onDeviceOrientation, true);
+          }).catch(() => {});
+        } else if (DOE) {
+          window.addEventListener("deviceorientation", onDeviceOrientation, true);
+        }
+      } catch (err) { /* 非対応端末は無視 */ }
+    }
+
+    // 横向きへ固定（対応端末のみ・ベストエフォート。iOSは非対応だがCSSの
+    // 縦向き案内でカバー）。フルスクリーン化してからロックを試みる。
+    function tryLockLandscape() {
+      try {
+        const el = document.documentElement;
+        if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock("landscape").catch(() => {});
+        }
+      } catch (err) { /* 無視 */ }
+    }
+
+    // 横向きの回転方向（screen.orientation.angle）に応じて軸の符号を決める。
+    // 90（反時計回り）を既定とし、270/-90 は左右・前後を反転。
+    function orientationAngle() {
+      if (screen.orientation && typeof screen.orientation.angle === "number") return screen.orientation.angle;
+      if (typeof window.orientation === "number") return (window.orientation + 360) % 360;
+      return 90;
+    }
+
+    // 現在の傾きから steer(左右 -1..1) と pitchBack(前後 0..1) を求める。
+    function readTilt() {
+      const ang = orientationAngle();
+      // 横向きでは、ポートレート基準の gamma が前後、beta が左右になる。
+      let steerRaw, pitchRaw;
+      if (ang === 270 || ang === -90) {   // 時計回り横向き
+        steerRaw = -tiltBeta;
+        pitchRaw = tiltGamma;
+      } else {                             // 90（反時計回り）ほか
+        steerRaw = tiltBeta;
+        pitchRaw = -tiltGamma;
+      }
+      const steer = Math.max(-1, Math.min(1, steerRaw / 35));   // ±35度でフル
+      // 奥に倒す(pitchRaw>0)ほど前へ。直立(0)・画面下向き(<0)は最も手前(0)。
+      const pitchBack = Math.max(0, Math.min(1, pitchRaw / 45)); // 45度でフル前進
+      return { steer, pitchBack };
+    }
+
+    // 画面タッチで発射し続ける／状態遷移（タイトル→開始、ゲームオーバー→タイトル等）
+    if (isTouchDevice) {
+      const updateTouchFiring = e => { touchFiring = (e.touches && e.touches.length > 0); };
+      stage.addEventListener("touchstart", updateTouchFiring, { passive: true });
+      stage.addEventListener("touchend", updateTouchFiring, { passive: true });
+      stage.addEventListener("touchcancel", updateTouchFiring, { passive: true });
+    }
+
+    // タッチ／クリックでの状態遷移
     document.addEventListener("pointerdown", () => {
-      if (demoMode) exitDemo();
+      if (demoMode) { exitDemo(); return; }
+      if (!isTouchDevice) return;   // PCはポインタでゲーム操作しない
+
+      unlockBgm();
+      if (gameCleared) {
+        // クリア後の画面遷移（Qはスマホに無いので勧誘画面はそのままタイトルへ）
+        if (clearPhase === 3) {
+          if (tunnelMode) backToTitle();
+          else { clearPhase = 4; clearFrame = 0; }
+        } else if (clearPhase === 4) {
+          backToTitle();
+        }
+        return;
+      }
+      if (gameStarted && !gameOver) return;   // プレイ中のタッチは発射用（何もしない）
+      if (gameStarted && gameOver) { backToTitle(); return; }
+      if (!gameStarted && clearPhase === 0) {
+        // タイトルからゲーム開始。傾き許可要求と横向き固定を試みる。
+        enableTilt();
+        tryLockLandscape();
+        startGame();
+      }
     });
 
     // 入力
@@ -937,6 +1064,15 @@
         if (pad.dpadDown)  player.y += player.speed;
       }
 
+      // スマホ：傾きで操作。左右は傾き量で移動、前後は傾き角で位置を決める。
+      if (isTouchDevice && tiltActive) {
+        const { steer, pitchBack } = readTilt();
+        player.x += steer * player.speed;
+        const nearY = FIELD_H - player.h;        // 最も手前
+        const farLimit = FIELD_H * 0.30;         // 前へ出せる限界（奥に行き過ぎない）
+        player.y = nearY - pitchBack * (nearY - farLimit);
+      }
+
       player.x = Math.max(0, Math.min(FIELD_W  - player.w, player.x));
       player.y = Math.max(0, Math.min(FIELD_H - player.h, player.y));
 
@@ -944,8 +1080,9 @@
 
       const wantShootKeyboard = keys["Space"] || keys["KeyJ"];
       const wantShootPad = pad && pad.shoot;
+      const wantShootTouch = isTouchDevice && touchFiring;
 
-      if ((wantShootKeyboard || wantShootPad) && player.fireCooldown === 0) {
+      if ((wantShootKeyboard || wantShootPad || wantShootTouch) && player.fireCooldown === 0) {
         firePlayerShots();
         player.fireCooldown = 8;
       }
@@ -2587,23 +2724,41 @@
       hctx.font = "46px monospace";
       hctx.fillText("THE SHOOTINGⅢ", CANVAS_W / 2, 115);
 
-      hctx.font = "18px monospace";
-      hctx.fillStyle = "#88ff88";
-      hctx.fillText("PC PLAY ONLY", CANVAS_W / 2, 162);
+      if (isTouchDevice) {
+        // スマホ：横向き・傾き操作・タッチ発射の案内
+        hctx.font = "18px monospace";
+        hctx.fillStyle = "#88ff88";
+        hctx.fillText("SMARTPHONE / 横向き", CANVAS_W / 2, 162);
 
-      hctx.font = "16px monospace";
-      hctx.fillStyle = "#88ff88";
-      hctx.fillText("操作　←↑↓→ & SPACE", CANVAS_W / 2, 192);
+        hctx.font = "16px monospace";
+        hctx.fillText("左右に傾けて移動", CANVAS_W / 2, 192);
+        hctx.fillText("奥に倒すと前進・画面タッチで発射", CANVAS_W / 2, 217);
 
-      hctx.font = "16px monospace";
-      hctx.fillStyle = "#88ff88";
-      hctx.fillText("KEYBOARD & GAME CONTROLLER", CANVAS_W / 2, 217);
+        const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
+        if (blinkOn) {
+          hctx.font = "20px monospace";
+          hctx.fillStyle = "#ffffff";
+          hctx.fillText("TAP TO START", CANVAS_W / 2, 300);
+        }
+      } else {
+        hctx.font = "18px monospace";
+        hctx.fillStyle = "#88ff88";
+        hctx.fillText("PC PLAY ONLY", CANVAS_W / 2, 162);
 
-      const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
-      if (blinkOn) {
-        hctx.font = "20px monospace";
-        hctx.fillStyle = "#ffffff";
-        hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, 300);
+        hctx.font = "16px monospace";
+        hctx.fillStyle = "#88ff88";
+        hctx.fillText("操作　←↑↓→ & SPACE", CANVAS_W / 2, 192);
+
+        hctx.font = "16px monospace";
+        hctx.fillStyle = "#88ff88";
+        hctx.fillText("KEYBOARD & GAME CONTROLLER", CANVAS_W / 2, 217);
+
+        const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
+        if (blinkOn) {
+          hctx.font = "20px monospace";
+          hctx.fillStyle = "#ffffff";
+          hctx.fillText("PUSH ANY BUTTON", CANVAS_W / 2, 300);
+        }
       }
       hctx.textAlign = "left";
     }
@@ -2799,8 +2954,9 @@
           if (pad0 && pad0.buttons && pad0.buttons.some(b => b.pressed)) {
             unlockBgm();
             startGame();
-          } else if (performance.now() - titleIdleStartMs >= demoIdleMs) {
-            // タイトル画面を一定時間放置したらデモプレイ開始（初回5秒・以降10秒）
+          } else if (!isTouchDevice && performance.now() - titleIdleStartMs >= demoIdleMs) {
+            // タイトル画面を一定時間放置したらデモプレイ開始（初回5秒・以降10秒）。
+            // スマホはタップでプレイするのでデモは出さない。
             startDemo();
           }
         } else {
