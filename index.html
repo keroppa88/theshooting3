@@ -421,8 +421,7 @@
       return 90;
     }
 
-    // 現在の傾きから steer(左右 -1..1) と pitchBack(前後 0..1) を求める。
-    function readTilt() {
+    function readTiltRaw() {
       const ang = orientationAngle();
       let steerRaw, pitchRaw;
 
@@ -1124,13 +1123,17 @@
         if (pad.dpadDown)  player.y += player.speed;
       }
 
+<<<<<<< codex/fix-screen-tilt-movement-functionality-x8fngc
+      // スマホ：傾きで操作。開始時の持ち方を基準に、傾けた分だけ前後左右へ動かす。
+      if (isTouchDevice && (tiltActive || motionActive)) {
+        const { steer, pitchForward } = readTilt();
+=======
       // スマホ：傾きで操作。左右は傾き量で移動、前後は傾き角で位置を決める。
       if (isTouchDevice && (tiltActive || motionActive)) {
         const { steer, pitchBack } = readTilt();
+>>>>>>> main
         player.x += steer * player.speed;
-        const nearY = FIELD_H - player.h;        // 最も手前
-        const farLimit = FIELD_H * 0.30;         // 前へ出せる限界（奥に行き過ぎない）
-        player.y = nearY - pitchBack * (nearY - farLimit);
+        player.y -= pitchForward * player.speed;
       }
 
       player.x = Math.max(0, Math.min(FIELD_W  - player.w, player.x));
@@ -1634,6 +1637,7 @@
       player.x = (FIELD_W - player.w) / 2;
       player.y = FIELD_H - 80;
       player.fireCooldown = 0;
+      resetTiltCalibration();
       gameOver = false;
       gameStarted = true;
       gameCleared = false;
