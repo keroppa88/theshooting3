@@ -718,6 +718,7 @@
       //  patrol 6秒（左右往復・3秒目と4秒目に3方向弾）→ 前へ1秒 → 滞在2秒 → 戻る1秒。
       // 通常は patrol 8秒 → 前へ2秒 → 滞在1秒 → 戻る2秒。
       const qBoss = tunnelMode;
+      const rBoss = fineGridMode;
       // 前進時に止まる位置。通常は見た目の前面が「手前2格子分（約67px）」を残す位置で
       // 止め、そこは自機が安全に退避できる領域として確保する。
       // Qモードは最前面（画面の一番手前）まで出てくる（退避領域なし）。
@@ -737,6 +738,7 @@
         moveDir: 1,
         shotTimer: 120,
         qBoss,
+        rBoss,
         // ===== 前進ラッシュ（ランジ）の状態 =====
         homeY: y,
         lungeTargetY,
@@ -2255,6 +2257,13 @@
       qFinalBossVox = m;
     });
 
+    // Rモードのラスボスは、能面と触手のboss03.voxを使用する。
+    let rFinalBossVox = null;
+    loadVoxModel("Game/vox/boss03.vox", (m) => {
+      m.geo.translate(0, -m.minY, 0);
+      rFinalBossVox = m;
+    });
+
     // 自機弾・敵弾
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
     const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
@@ -2283,8 +2292,12 @@
       if (entity === player) {
         return playerMesh;
       } else if (entity.isFinalBoss) {
-        // Qモードのラスボスはboss02.voxに差し替え
-        const fbVox = (entity.qBoss && qFinalBossVox) ? qFinalBossVox : finalBossVox;
+        // 通常=boss01、Qモード=boss02、Rモード=boss03。
+        const fbVox = entity.qBoss && qFinalBossVox
+          ? qFinalBossVox
+          : entity.rBoss && rFinalBossVox
+            ? rFinalBossVox
+            : finalBossVox;
         if (fbVox) {
           mesh = new THREE.Mesh(fbVox.geo, fbVox.mat);
           const s = entity.w / fbVox.w;
