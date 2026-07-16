@@ -2213,14 +2213,14 @@
     let qEnemyVox = null;      // q_teki.vox   … 通常敵・軌跡敵・蛇行敵
     let qShooterVox = null;    // q_teki2.vox  … 弾を撃つ通常敵
     let qMidBossVox = null;    // q_boss0.vox  … 中ボス
-    let qFinalBossVox = null;  // q_boss01.vox … ラスボス
+    let qFinalBossVox = null;  // boss02.vox … ラスボス
     loadVoxModel("Game/vox/q_teki.vox",  (m) => { qEnemyVox = m; });
     loadVoxModel("Game/vox/q_teki2.vox", (m) => { qShooterVox = m; });
     loadVoxModel("Game/vox/q_boss0.vox", (m) => {
       m.geo.translate(0, -m.minY, 0); // 通常版と同じく底面を原点に
       qMidBossVox = m;
     });
-    loadVoxModel("Game/vox/q_boss01.vox", (m) => {
+    loadVoxModel("Game/vox/boss02.vox", (m) => {
       m.geo.translate(0, -m.minY, 0);
       qFinalBossVox = m;
     });
@@ -2253,7 +2253,7 @@
       if (entity === player) {
         return playerMesh;
       } else if (entity.isFinalBoss) {
-        // Qモードのラスボスはq_boss01.voxに差し替え
+        // Qモードのラスボスはboss02.voxに差し替え
         const fbVox = (entity.qBoss && qFinalBossVox) ? qFinalBossVox : finalBossVox;
         if (fbVox) {
           mesh = new THREE.Mesh(fbVox.geo, fbVox.mat);
