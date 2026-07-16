@@ -356,7 +356,17 @@
       // ゲーム中にQキーで格子トンネル（デザインチェンジ）を切り替える
       if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyQ" && !e.repeat) {
         tunnelMode = !tunnelMode;
-        if (tunnelMode) zigzagSpawnTimer = randInt(90, 150); // ONにしたら蛇行敵を早めに
+        if (tunnelMode) {
+          oceanMode = false;
+          zigzagSpawnTimer = randInt(90, 150); // ONにしたら蛇行敵を早めに
+        }
+        return;
+      }
+
+      // ゲーム中にRキーで海・青空・雲のRモードを切り替える。Qモードとは排他的。
+      if (gameStarted && !demoMode && !gameCleared && clearPhase === 0 && e.code === "KeyR" && !e.repeat) {
+        oceanMode = !oceanMode;
+        if (oceanMode) tunnelMode = false;
         return;
       }
 
@@ -1458,6 +1468,7 @@
       gameCleared = false;
 
       tunnelMode = false; // デザインチェンジは毎ゲーム オフから
+      oceanMode = false;  // Rモードも毎ゲーム オフから
 
       finalMode = false;
       finalDelayFrames = 0;
@@ -1501,6 +1512,8 @@
       gameStarted = false;
       gameOver = false;
       gameCleared = false;
+      tunnelMode = false;
+      oceanMode = false;
 
       // タイトルの自機は定位置（中央下）に戻す（デモで死んだ位置のまま残さない）
       player.x = (FIELD_W - player.w) / 2;
@@ -1517,8 +1530,9 @@
        描画だけを立体（ボクセル押し出し）に変換して表示する。
        ========================================================================= */
 
-    // 影は「地面から浮いて見える」原因になるため一旦オフ。この定数をtrueに戻せば復活する。
-    const ENABLE_SHADOWS = false;
+    // Rモードの海面へ機体・敵の影を落とすため、シャドウマップを有効にする。
+    // 光源側のcastShadowはRモード中だけ有効化し、通常時の負荷は抑える。
+    const ENABLE_SHADOWS = true;
     // 地面・空・フォグを同じ色にして、地平線が浮き上がって見えないようにする（宇宙空間の一体感）
     const SPACE_COLOR = 0x000000;
 
@@ -1571,7 +1585,7 @@
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.9);
     sunLight.position.set(-250, 600, 450);
     sunLight.target.position.set(0, BASE_ALT, -600);
-    sunLight.castShadow = ENABLE_SHADOWS;
+    sunLight.castShadow = false;
     sunLight.shadow.mapSize.set(1024, 1024);
     sunLight.shadow.camera.left = -500;
     sunLight.shadow.camera.right = 500;
@@ -1652,10 +1666,55 @@
       // 格子は遠端までくっきり見せたいのでフォグの影響を受けない。
       fog: false
     });
+
+    // ===== Rモード：海面 =====
+    // Canvas上に短い波筋を手続き生成し、色テクスチャと凹凸の両方に利用する。
+    function buildOceanTexture() {
+      const size = 512;
+      const cvs = document.createElement("canvas");
+      cvs.width = size; cvs.height = size;
+      const c = cvs.getContext("2d");
+      const grad = c.createLinearGradient(0, 0, 0, size);
+      grad.addColorStop(0, "#4db7d8");
+      grad.addColorStop(1, "#176f9c");
+      c.fillStyle = grad;
+      c.fillRect(0, 0, size, size);
+      let seed = 0x57415645;
+      const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      for (let i = 0; i < 180; i++) {
+        const x = rnd() * size;
+        const y = rnd() * size;
+        const len = 12 + rnd() * 58;
+        c.strokeStyle = rnd() > 0.35 ? "rgba(205,245,255,0.48)" : "rgba(7,62,105,0.42)";
+        c.lineWidth = 1 + rnd() * 2;
+        c.beginPath();
+        c.moveTo(x, y);
+        c.quadraticCurveTo(x + len * 0.5, y - 3 + rnd() * 6, x + len, y);
+        c.stroke();
+      }
+      const tex = new THREE.CanvasTexture(cvs);
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(18, Math.max(5, GROUND_REPEAT_Y * 1.7));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      return tex;
+    }
+    const oceanTex = buildOceanTexture();
+    const oceanMat = new THREE.MeshStandardMaterial({
+      map: oceanTex,
+      bumpMap: oceanTex,
+      bumpScale: 2.2,
+      color: 0x7bc9e6,
+      roughness: 0.34,
+      metalness: 0.08,
+      fog: true
+    });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     // 手前端GROUND_NEAR_Z〜遠端SPAWN_LINE_Z（＝敵出現ライン）を正確に覆う位置に置く
     ground.position.set(0, 0, (GROUND_NEAR_Z + SPAWN_LINE_Z) / 2);
+    ground.receiveShadow = true;
     scene.add(ground);
 
     // ===== デザインチェンジ：格子のトンネル（ゲーム中にQキーで切り替え） =====
@@ -1664,6 +1723,7 @@
     // 最奥は「横長で隙間のほぼない一本の線」になる。敵はその線から出現する。
     // 天井・壁とも地表と同じ大きさの格子で、奥から手前へ地表と同じくスクロールする。
     let tunnelMode = false;
+    let oceanMode = false;
     const TUNNEL_TILE = GROUND_W / GROUND_REPEAT_X;   // 格子1タイルのワールドサイズ（地表と同じ）
     const WALL_X = toWorldX(FIELD_W) + 10;            // 自機移動範囲の少し外側（左は -WALL_X）
     const TUNNEL_NEAR_Z = GROUND_NEAR_Z;              // 手前端（カメラより手前）
@@ -1801,6 +1861,100 @@
     // 灰色〜くすんだ色に化けて「黒から色へ」のグラデーションが感じられなくなる
     skyGradientTex.colorSpace = THREE.SRGBColorSpace;
     scene.background = skyGradientTex;
+
+    // Rモード専用の昼の青空。通常モードの可変サイバー空とは別テクスチャにして、
+    // モード切替時に即座に入れ替える。
+    const oceanSkyCanvas = document.createElement("canvas");
+    oceanSkyCanvas.width = 2;
+    oceanSkyCanvas.height = 512;
+    const oceanSkyCtx = oceanSkyCanvas.getContext("2d");
+    const oceanSkyGrad = oceanSkyCtx.createLinearGradient(0, oceanSkyCanvas.height, 0, 0);
+    oceanSkyGrad.addColorStop(0, "#d9f3ff");
+    oceanSkyGrad.addColorStop(0.32, "#82cef0");
+    oceanSkyGrad.addColorStop(1, "#1688df");
+    oceanSkyCtx.fillStyle = oceanSkyGrad;
+    oceanSkyCtx.fillRect(0, 0, oceanSkyCanvas.width, oceanSkyCanvas.height);
+    const oceanSkyTex = new THREE.CanvasTexture(oceanSkyCanvas);
+    oceanSkyTex.colorSpace = THREE.SRGBColorSpace;
+    const oceanFog = new THREE.Fog(0xb8e4f5, 1500, 4400);
+
+    // 半透明の雲スプライトを複数重ね、Three.jsで一般的な柔らかい雲を生成する。
+    // 遠方からカメラ手前へ流し、通過後は再び遠方へ循環させる。
+    const cloudRoot = new THREE.Group();
+    cloudRoot.visible = false;
+    scene.add(cloudRoot);
+
+    function buildCloudTexture() {
+      const size = 128;
+      const cvs = document.createElement("canvas");
+      cvs.width = size; cvs.height = size;
+      const c = cvs.getContext("2d");
+      const g = c.createRadialGradient(64, 58, 7, 64, 64, 61);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.42, "rgba(255,255,255,0.92)");
+      g.addColorStop(0.72, "rgba(232,244,250,0.52)");
+      g.addColorStop(1, "rgba(220,238,247,0)");
+      c.fillStyle = g;
+      c.fillRect(0, 0, size, size);
+      const tex = new THREE.CanvasTexture(cvs);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+    const cloudTex = buildCloudTexture();
+    const cloudMats = [
+      new THREE.SpriteMaterial({ map: cloudTex, color: 0xffffff, transparent: true, opacity: 0.82, depthWrite: false, fog: true }),
+      new THREE.SpriteMaterial({ map: cloudTex, color: 0xe8f4fa, transparent: true, opacity: 0.68, depthWrite: false, fog: true })
+    ];
+    let cloudSeed = 0x434c4f55;
+    const cloudRandom = () => ((cloudSeed = (cloudSeed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    for (let i = 0; i < 12; i++) {
+      const cloud = new THREE.Group();
+      const puffCount = 6 + Math.floor(cloudRandom() * 5);
+      for (let j = 0; j < puffCount; j++) {
+        const puff = new THREE.Sprite(cloudMats[j % cloudMats.length]);
+        puff.position.set((j - (puffCount - 1) / 2) * (34 + cloudRandom() * 28), (cloudRandom() - 0.25) * 52, (cloudRandom() - 0.5) * 80);
+        puff.scale.set(105 + cloudRandom() * 125, 62 + cloudRandom() * 70, 1);
+        cloud.add(puff);
+      }
+      const depth = -900 - cloudRandom() * 2700;
+      const spread = 620 + Math.abs(depth) * 0.34;
+      cloud.position.set((cloudRandom() - 0.5) * spread * 1.65, 220 + cloudRandom() * 260, depth);
+      cloud.userData.speed = 62 + cloudRandom() * 72;
+      cloud.userData.wind = (cloudRandom() - 0.5) * 8;
+      cloud.userData.phase = cloudRandom() * Math.PI * 2;
+      cloudRoot.add(cloud);
+    }
+    function updateOceanClouds(dt) {
+      if (!cloudRoot.visible) return;
+      const elapsed = performance.now() * 0.00025;
+      for (const cloud of cloudRoot.children) {
+        cloud.position.z += cloud.userData.speed * dt;
+        cloud.position.x += cloud.userData.wind * dt;
+        cloud.position.y += Math.sin(elapsed + cloud.userData.phase) * dt * 1.5;
+        if (cloud.position.z > -430) {
+          cloud.position.z = -3500 - cloudRandom() * 550;
+          const spread = 620 + Math.abs(cloud.position.z) * 0.34;
+          cloud.position.x = (cloudRandom() - 0.5) * spread * 1.65;
+          cloud.position.y = 220 + cloudRandom() * 260;
+        }
+      }
+    }
+
+    let lastOceanEnvironment = null;
+    function applyEnvironmentMode(showOcean) {
+      if (showOcean === lastOceanEnvironment) return;
+      lastOceanEnvironment = showOcean;
+      ground.material = showOcean ? oceanMat : groundMat;
+      scene.background = showOcean ? oceanSkyTex : skyGradientTex;
+      scene.fog = showOcean ? oceanFog : null;
+      cloudRoot.visible = showOcean;
+      sunLight.castShadow = showOcean;
+      sunLight.color.setHex(showOcean ? 0xfff4dc : 0xffffff);
+      hemiLight.color.setHex(showOcean ? 0xd8f2ff : 0x8fb0ff);
+      hemiLight.groundColor.setHex(showOcean ? 0x17688d : 0x0a0a12);
+      fillLight.color.setHex(showOcean ? 0x8fd8ff : 0x6699ff);
+      renderer.shadowMap.needsUpdate = true;
+    }
     // 空は「地平線＝黒、上へ行くほど色がつき明るくなる」を画面の空全体を使って
     // ゆるやかに描く（急な変化はベタ塗りに見えてグラデーションが感じられない）。
     // 地平線ぎわのモヤは空ではなく、地平線上に立てた縦板（spawnGlow）が担当する。
@@ -1985,7 +2139,10 @@
       lastScrollMs = now;
       const step = GROUND_SCROLL_UV_PER_SEC * dt;
       groundMat.map.offset.y += step;
+      oceanTex.offset.y += step * 0.38;
+      oceanTex.offset.x += step * 0.045;
       spaceScrollZ += step * (GROUND_D / GROUND_REPEAT_Y);
+      updateOceanClouds(dt);
       updateCyberColors();
     }
 
@@ -2314,6 +2471,7 @@
       } else {
         mesh = createEnemyShipMesh(entity);
       }
+      mesh.traverse(o => { if (o.isMesh) o.castShadow = true; });
       scene.add(mesh);
       entity.mesh3d = mesh;
       return mesh;
@@ -2578,8 +2736,10 @@
       syncPlayerMesh();
       syncStarfieldMotion();
 
+      const showOcean = oceanMode && clearPhase === 0;
+      applyEnvironmentMode(showOcean);
       ground.visible = (clearPhase === 0);
-      spawnGlow.visible = (clearPhase === 0);
+      spawnGlow.visible = (clearPhase === 0 && !showOcean);
       starPoints.visible = false;
       // ラスボスが出る直前に横壁・天井の格子を消す。
       // finalMode開始（1800点超え）直後はまだ中ボス戦などが続いているので格子は残し、
@@ -2617,6 +2777,10 @@
       hctx.fillStyle = "#88ff88";
       hctx.fillText("KEYBOARD & GAME CONTROLLER", CANVAS_W / 2, 217);
 
+      hctx.font = "14px monospace";
+      hctx.fillStyle = "#bdeeff";
+      hctx.fillText("R : OCEAN MODE", CANVAS_W / 2, 246);
+
       const blinkOn = Math.floor(frameCount / 30) % 2 === 0;
       if (blinkOn) {
         hctx.font = "20px monospace";
@@ -2635,6 +2799,13 @@
         hctx.fillStyle = "#ffd24a";
         hctx.font = "13px sans-serif";
         hctx.fillText("超初心者無敵モード", 10, 44);
+      }
+      if (oceanMode) {
+        hctx.fillStyle = "#bdeeff";
+        hctx.font = "13px monospace";
+        hctx.textAlign = "right";
+        hctx.fillText("R MODE : OCEAN", CANVAS_W - 10, 24);
+        hctx.textAlign = "left";
       }
     }
 
