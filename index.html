@@ -100,7 +100,12 @@
       if (!gameStarted && clearPhase === 0 && !gameCleared) {
         startGame();
       } else if (gameCleared) {
-        backToTitle();
+        if (clearPhase === 3 && !fineGridMode) {
+          clearPhase = 4;
+          clearFrame = 0;
+        } else {
+          backToTitle();
+        }
       } else if (gameStarted && gameOver && !demoMode) {
         startGame();
       }
@@ -382,17 +387,18 @@
       }
 
       // クリア後の画面遷移：
-      //  clearPhase 3（クリア画像）→ 何かキーで clearPhase 4（ハードモード案内の黒画面）
-      //  clearPhase 4（黒画面）→ Qでハードモード開始、それ以外はタイトルへ
+      //  clearPhase 3（クリア画像）→ 何かキーで clearPhase 4（次モード案内の黒画面）
+      //  clearPhase 4（黒画面）→ 通常クリア時はQ、Qクリア時はRで次モード開始
       if (gameCleared) {
         if (e.repeat) return;
         if (clearPhase === 3) {
-          // Qモード（ハードモード）でクリアした場合は勧誘画面を出さず直接タイトルへ
-          if (tunnelMode) { backToTitle(); return; }
+          // Rモードまでクリアした場合は次の案内を出さずタイトルへ戻る。
+          if (fineGridMode) { backToTitle(); return; }
           clearPhase = 4;
           clearFrame = 0;
         } else if (clearPhase === 4) {
-          if (e.code === "KeyQ") startHardMode();
+          if (tunnelMode && e.code === "KeyR") startRMode();
+          else if (!tunnelMode && e.code === "KeyQ") startHardMode();
           else backToTitle();
         } else {
           backToTitle();
@@ -718,6 +724,7 @@
       //  patrol 6秒（左右往復・3秒目と4秒目に3方向弾）→ 前へ1秒 → 滞在2秒 → 戻る1秒。
       // 通常は patrol 8秒 → 前へ2秒 → 滞在1秒 → 戻る2秒。
       const qBoss = tunnelMode;
+      const rBoss = fineGridMode;
       // 前進時に止まる位置。通常は見た目の前面が「手前2格子分（約67px）」を残す位置で
       // 止め、そこは自機が安全に退避できる領域として確保する。
       // Qモードは最前面（画面の一番手前）まで出てくる（退避領域なし）。
@@ -737,6 +744,7 @@
         moveDir: 1,
         shotTimer: 120,
         qBoss,
+        rBoss,
         // ===== 前進ラッシュ（ランジ）の状態 =====
         homeY: y,
         lungeTargetY,
@@ -2255,6 +2263,13 @@
       qFinalBossVox = m;
     });
 
+    // Rモードのラスボスは、能面と触手のboss03.voxを使用する。
+    let rFinalBossVox = null;
+    loadVoxModel("Game/vox/boss03.vox", (m) => {
+      m.geo.translate(0, -m.minY, 0);
+      rFinalBossVox = m;
+    });
+
     // 自機弾・敵弾
     // 縦（高さ・進行方向の長さ）は当たり判定の半分の見た目にする（横幅はそのまま）
     const playerBulletGeo = new THREE.BoxGeometry(6, 8, 6);
@@ -2283,8 +2298,12 @@
       if (entity === player) {
         return playerMesh;
       } else if (entity.isFinalBoss) {
-        // Qモードのラスボスはboss02.voxに差し替え
-        const fbVox = (entity.qBoss && qFinalBossVox) ? qFinalBossVox : finalBossVox;
+        // 通常=boss01、Qモード=boss02、Rモード=boss03。
+        const fbVox = entity.qBoss && qFinalBossVox
+          ? qFinalBossVox
+          : entity.rBoss && rFinalBossVox
+            ? rFinalBossVox
+            : finalBossVox;
         if (fbVox) {
           mesh = new THREE.Mesh(fbVox.geo, fbVox.mat);
           const s = entity.w / fbVox.w;
@@ -2744,15 +2763,20 @@
       }
     }
 
-    // クリア後の「ハードモード案内」黒画面（英語・白文字）
-    function drawHardModePromptHud() {
+    // クリア後の「次モード案内」黒画面（英語・白文字）
+    function drawNextModePromptHud() {
       hctx.fillStyle = "#000";
       hctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
       hctx.fillStyle = "#ffffff";
       hctx.textAlign = "center";
       hctx.font = "20px monospace";
-      hctx.fillText("To Take On A Slightly Harder Mode,", CANVAS_W / 2, CANVAS_H / 2 - 12);
-      hctx.fillText("Press The Q Button", CANVAS_W / 2, CANVAS_H / 2 + 22);
+      if (tunnelMode) {
+        hctx.fillText("To Take On The Fine Grid R Mode,", CANVAS_W / 2, CANVAS_H / 2 - 12);
+        hctx.fillText("Press The R Button", CANVAS_W / 2, CANVAS_H / 2 + 22);
+      } else {
+        hctx.fillText("To Take On A Slightly Harder Mode,", CANVAS_W / 2, CANVAS_H / 2 - 12);
+        hctx.fillText("Press The Q Button", CANVAS_W / 2, CANVAS_H / 2 + 22);
+      }
       hctx.textAlign = "left";
     }
 
@@ -2761,6 +2785,12 @@
       startGame();
       tunnelMode = true;
       zigzagSpawnTimer = randInt(90, 150); // ハードモードは蛇行敵を早めに
+    }
+
+    // Qモードクリア後の案内から、細目格子のRモードで開始する。
+    function startRMode() {
+      startGame();
+      fineGridMode = true;
     }
 
     function updateClearExplosionPhase() {
@@ -2835,16 +2865,16 @@
           hctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
         } else if (clearPhase === 3) {
           drawClearScreenHud();
-          // クリア画像の表示中はどれかのボタンでハードモード案内の黒画面へ。
-          // ただしQモード（ハードモード）でクリアした場合は勧誘せず直接タイトルへ。
+          // 通常クリア後はQ案内、Qクリア後はR案内へ進む。
+          // Rモードまでクリアした場合はタイトルへ戻る。
           // （キーボードはkeydownリスナー側で処理）
           if (gamepadAnyJustPressed) {
-            if (tunnelMode) backToTitle();
+            if (fineGridMode) backToTitle();
             else { clearPhase = 4; clearFrame = 0; }
           }
         } else if (clearPhase === 4) {
-          drawHardModePromptHud();
-          // 黒画面：ゲームパッドはどのボタンでもタイトルへ（ハードモード開始はキーボードのQのみ）
+          drawNextModePromptHud();
+          // 黒画面：ゲームパッドはどのボタンでもタイトルへ（次モード開始はキーボードのみ）
           if (gamepadAnyJustPressed) backToTitle();
         } else if (!gameStarted) {
           syncPlayerMesh();
